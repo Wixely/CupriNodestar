@@ -11,6 +11,14 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- The projection is internal — it is sample code, not API — but the redaction boundary it enforces is the
+       thing most worth a test, so the test assembly is let in. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Constellation.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
   </ItemGroup>

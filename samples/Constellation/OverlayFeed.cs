@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using CupriNet.Concordance;
+using CupriNet.Abstractions;
 using CupriNet.Core;
 using CupriNet.Hosting;
 using CupriNet.Rites;
@@ -76,7 +76,18 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
     private JsonNode Project()
     {
         var current = node();
-        var entries = current.Constellation.Entries;
+        return Project(current.Constellation, current.Identity.Sigil, network, siteAddress());
+    }
+
+    /// <inheritdoc cref="Project()"/>
+    /// <remarks>
+    /// Pure, and separated from the node on purpose: the redaction boundary is the part of this sample most worth
+    /// testing, and a test should not have to stand up an overlay node to check what a payload contains.
+    /// </remarks>
+    internal static JsonNode Project(
+        CupriNet.Concordance.Constellation constellation, Sigil self, string network, string? site)
+    {
+        var entries = constellation.Entries;
         var peers = new JsonArray();
 
         foreach (var entry in entries.Take(MaxPeersPublished))
@@ -113,8 +124,8 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
             ["node"] = new JsonObject
             {
                 ["network"] = network,
-                ["site"] = siteAddress(),
-                ["self"] = Bech32.Fingerprint(current.Identity.Sigil),
+                ["site"] = site,
+                ["self"] = Bech32.Fingerprint(self),
             },
             ["peers"] = peers,
             ["shown"] = peers.Count,
