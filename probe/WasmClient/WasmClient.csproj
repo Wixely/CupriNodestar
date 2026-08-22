@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    PHASE-2 PROBE — throwaway, not part of the product build.
+
+    The one question it answers: does the CupriNet crypto layer (BouncyCastle, via the Alembic seam) COMPILE, TRIM and
+    LINK under NativeAOT-LLVM for browser-wasm? With Mono ruled out there is no second way to run the client stack in a
+    browser, so a failure here is not a bundle-size problem — it means swapping the crypto backend through the Alembic
+    seam (CupriCurve) or rethinking the browser tier entirely. Answer it before building anything that assumes it.
+
+    The configuration is lifted from CupriFace's samples/WebLlvm, which is a working NativeAOT-LLVM host, minus its
+    Skia/HarfBuzz native archives — this probe is pure managed code and needs none of them.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Trimming is part of the question, not an optimisation: an untrimmed pass would hide reflection the trimmer
+         will later break. TrimMode=full matches what a shipping client would use. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+
+    <!-- Deliberately OFF. DotNetJsApi emits the .NET JS API layer, which wires the native module to a loader script
+         (dotnet.js) and makes the Emscripten module non-standalone. A real client wants that layer for interop; this
+         probe is a console program that only has to prove the code compiles and the primitives work, so leaving it off
+         keeps the output runnable on its own — and shows the floor bundle size without the interop layer. -->
+    <DotNetJsApi>false</DotNetJsApi>
+    <UsingBrowserRuntimeWorkload>false</UsingBrowserRuntimeWorkload>
+    <WasmEnableLegacyJsInterop>false</WasmEnableLegacyJsInterop>
+    <InvariantTimezone>true</InvariantTimezone>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <StackTraceSupport>true</StackTraceSupport>
+    <DebugType>none</DebugType>
+
+    <!-- -O1 keeps the probe loop fast; a shipping bundle would use -O3 + wasm-opt. -->
+    <EmccFlags>$(EmccFlags) -O1</EmccFlags>
+
+    <!-- The ILC compiler is a native tool, so it follows the BUILD machine even though the output is browser-wasm.
+         The version is pinned to the one CupriFace has proven rather than floating on a nightly feed. -->
+    <ExecutableExtensionName Condition="$([MSBuild]::IsOSPlatform('Windows'))">.exe</ExecutableExtensionName>
+    <IlcHostRid Condition="'$(IlcHostRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</IlcHostRid>
+    <IlcLlvmVersion Condition="'$(IlcLlvmVersion)' == ''">10.0.0-rc.1.26357.1</IlcLlvmVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;
+    </RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The FULL client path. CupriNet.Hosting is the interesting addition: the Pilgrim side
+         (PilgrimageOverVesselAsync) is a node-level API, so it drags in the Concordance overlay, Traversal and
+         Persistence � machinery a browser does not need but cannot currently avoid. Whether all of that survives
+         trimming for browser-wasm is the Phase-2 question. -->
+    <PackageReference Include="CupriNet.Hosting" Version="$(CupriNetVersion)" />
+    <PackageReference Include="CupriNet.Alembic.BouncyCastle" Version="$(CupriNetVersion)" />
+    <PackageReference Include="CupriNet.Rites" Version="$(CupriNetVersion)" />
+
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
+    <PackageReference Include="runtime.$(IlcHostRid).Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
+
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_LLVM_ROOT=$(EmscriptenUpstreamBinPath)" />
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_BINARYEN_ROOT=$(EmscriptenSdkToolsPath)" />
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_NODE_JS=$(EmscriptenNodeBinPath)node$(ExecutableExtensionName)" />
+    <EmscriptenEnvVars Include="EM_CACHE=$(EmscriptenCacheSdkCacheDir)" />
+  </ItemGroup>
+
+</Project>

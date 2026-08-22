@@ -304,9 +304,9 @@ lays it out and paints it to the canvas. The two content kinds now differ only b
   engine and resource loading — real, but far smaller than a scripting runtime.
 - ✅ **One renderer, every target.** The same markup paints identically in the browser, on desktop and on Android, and
   CupriFace carries a **real-DOM ARIA mirror on the web host**, so screen readers still work despite canvas rendering.
-- ⚠️ **The bootstrap is no longer small.** CupriFace's own `WebLlvm` bundle is 14.2 MB (5.5 MB gzipped) *before* the
-  CupriNet stack. "A thin client" is no longer an accurate description of the clearnet asset, and the deployment story
-  has to own that number.
+- ⚠️ **The bootstrap is no longer small — measured at 4.5 MB gzipped** for renderer + full client stack
+  ([details](#bundle-size-measured)). "A thin client" is not an accurate description of the clearnet asset, and the
+  deployment story has to own that number. The renderer is 87% of it.
 - ⚠️ **Chrome/content separation is now ours to enforce.** With everything painted into one canvas, the boundary between
   client chrome (address bar, connection panel) and site content is no longer the browser's to police — see the
   [connection panel](#the-connection-panel--who-am-i-actually-talking-to) rules.
@@ -532,11 +532,13 @@ recipe to put it online.**
 
 - ~~Does BouncyCastle compile under NativeAOT-LLVM?~~ **Answered: yes** — compiled, trimmed, linked and executed at
   418 KB gzipped. See the resolved note above and [`probe/WasmCrypto`](../probe/WasmCrypto).
-- **Does the *rest* of the client path compile?** The probe covered crypto + rite codecs. Still unproven under the same
-  toolchain: `CupriNet.Hosting`'s Pilgrim side (`PilgrimageOverVesselAsync` drags in more of the node than a browser
-  strictly needs) and CupriFace itself alongside it. Widen the probe before Phase 2 builds on the assumption.
+- ~~Does the rest of the client path compile?~~ **Answered: yes, all of it.** Both halves — `CupriNet.Hosting`'s
+  Pilgrim path *and* CupriFace — compile, trim (`TrimMode=full`), link and run for `browser-wasm`. See
+  [the measured bundle](#bundle-size-measured) below and [`probe/`](../probe).
 - **Handshake latency** on a mid-range phone. Compilation is settled; speed is not. Measure the Pilgrimage end-to-end
   — BouncyCastle in wasm is the thing to watch.
+- **Startup cost of a 4.5 MB gzipped bundle** on a mid-range phone — download, instantiation and time-to-first-paint.
+  Size is now known; what it *feels* like is not.
 - **Wiring `Reliquary` to the Shrine path.** *(Now the largest open protocol item.)* Not optional — it is the only route
   past the 256 KiB ceiling for app blobs and large assets, and it gates Phase 3. Recorded upstream as a prerequisite
   too. Decide the shape: a reserved Oracle path that hands off to a Reliquary transfer, or a Reliquary rite on its own
@@ -563,10 +565,28 @@ recipe to put it online.**
   HTML parser, the CSS cascade, the binding engine (`{{path}}`, `data-repeat`) and resource loading all consume
   untrusted input from an anonymous Shrine. Worth a fuzzing pass against CupriFace's parser with site-supplied markup,
   and a decision on whether a site may reference external resources at all.
-- **Client bundle size.** CupriFace's `WebLlvm` host alone is 14.2 MB (5.5 MB gzipped); adding the CupriNet stack puts
-  the clearnet bootstrap well into multi-megabyte territory. Measure it, decide whether it is acceptable on a phone,
-  and if not whether trimming, lazy-loading the renderer, or splitting the bundle is warranted. (Dropping to an
-  interpreted runtime is not on the table.)
+- **Is 4.5 MB gzipped acceptable, and if not, what gives?** No longer a guess — see the table below. The renderer is
+  **87% of it**, so the levers are all on that side: `-O3` + `wasm-opt` (the probes used `-O1`), lazy-loading the
+  renderer after the connection is up, or splitting Document-tier rendering from the hosted-app tier. Dropping to an
+  interpreted runtime is not on the table.
+
+### Bundle size, measured
+
+Three probes, each adding a layer, all published for `browser-wasm` under `TrimMode=full` at `-O1` and **executed**:
+
+| Probe | Adds | Raw | Gzipped |
+|---|---|---|---|
+| [`WasmCrypto`](../probe/WasmCrypto) | BouncyCastle + Oracle/Auspice codecs | 1.2 MB | **418 KB** |
+| [`WasmClient`](../probe/WasmClient) | `CupriNet.Hosting` — the full Pilgrim path | 1.7 MB | **594 KB** |
+| [`WasmRender`](../probe/WasmRender) | **CupriFace** — parse → style → layout → paint | 13 MB | **4.5 MB** |
+
+**The protocol stack is not the problem.** The entire CupriNet client — crypto, rites, and the node-level Pilgrim API
+with its overlay machinery — trims to **594 KB gzipped**, and `CupriNet.Hosting` costs only +176 KB despite dragging in
+Concordance, Traversal and Persistence that a browser never uses. The renderer is ~3.9 MB of the 4.5 MB total.
+
+`WasmRender` is a genuine end-to-end render, not a link check: it parses HTML, applies a stylesheet, lays out, paints
+to an `SKSurface`, then **reads a pixel back** (`#141416` — the background the CSS asked for) and PNG-encodes the
+result. Reading the framebuffer is the point; a render that "succeeded" without touching pixels would prove nothing.
 - **Host-API capability contract** — the capability surface a hosted WASM blob is granted, and how the client exposes it
   to a nested app without handing over the raw session. Settle in Phase 3, with the CupriFace sample as the first
   consumer. **Two WASM modules in one tab** is the cost to measure there.
