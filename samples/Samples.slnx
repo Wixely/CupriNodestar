@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="Constellation/Constellation.csproj" />
+  </Folder>
+</Solution>

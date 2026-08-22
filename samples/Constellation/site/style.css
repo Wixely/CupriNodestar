@@ -1,0 +1,54 @@
+/* Served over L2 as a separate Oracle consult — which is also the point: an Oracle response is one message capped
+   at 256 KiB over WebRTC, so a page and its assets are separate fetches rather than one large bundle. */
+
+:root {
+  color-scheme: light dark;
+  --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e9e9ee; --dim: #9797a3; --bg: #121216; --card: #1b1b21; --line: #2b2b34; --accent: #a58cff; }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  transition: opacity .2s;
+}
+body.stale { opacity: .45; }
+
+main { max-width: 50rem; margin: 0 auto; }
+
+header { margin-bottom: 1.5rem; }
+h1 { font-size: 1.4rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+h2 { font-size: .95rem; margin: 1.75rem 0 .75rem; }
+.sub { color: var(--dim); margin: 0; font-size: .92rem; }
+
+.count { color: var(--dim); font-weight: 400; font-size: .85rem; margin-left: .35rem; }
+
+.panel {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: .35rem .95rem; margin-bottom: .5rem;
+}
+.row { display: flex; gap: 1rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.k { color: var(--dim); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; min-width: 5.5rem; }
+.v { font-size: .88rem; word-break: break-all; }
+.accent { color: var(--accent); font-weight: 600; }
+
+code, .sigil { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.peers { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+.peer {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem .85rem; display: flex; flex-direction: column; gap: .2rem;
+}
+.sigil { font-size: .82rem; }
+.moniker { font-size: .9rem; font-weight: 600; }
+.meta { color: var(--dim); font-size: .78rem; }
+
+.empty { color: var(--dim); font-size: .9rem; }
+.empty[hidden] { display: none; }
+
+footer { color: var(--dim); font-size: .78rem; margin-top: 2rem; }

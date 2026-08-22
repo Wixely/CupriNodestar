@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Constellation</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Constellation</h1>
+    <p class="sub">This node's own view of the overlay — served to you over the network it is describing.</p>
+  </header>
+
+  <!--
+    The connection panel. It names the peer this page arrived from, so moving between nodes is unmistakable rather
+    than inferred: two Constellation graphs otherwise look alike, and the single most interesting fact — that you
+    just moved to a different, independently-addressed host — would be the one thing not on screen.
+  -->
+  <section class="panel" id="connection">
+    <div class="row"><span class="k">Site</span><code class="v accent" id="site">—</code></div>
+    <div class="row"><span class="k">Node</span><code class="v" id="self">—</code></div>
+    <div class="row"><span class="k">Network</span><span class="v" id="network">—</span></div>
+    <div class="row"><span class="k">Mode</span><span class="v" id="mode">—</span></div>
+    <div class="row"><span class="k">As of</span><span class="v" id="asof">—</span></div>
+  </section>
+
+  <section>
+    <h2>Peers <span class="count" id="count"></span></h2>
+    <div id="peers" class="peers"></div>
+    <p class="empty" id="empty">No peers yet. Seed this node from another's link and it will fill in.</p>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+  // Mode 2 today: the gateway serves a point-in-time snapshot, because a server-rendered page has no channel back
+  // that the no-WebSockets rule permits. Under Mode 1 the client attends the same feed and this becomes live —
+  // same payload, same snapshot, pushed instead of polled.
+  const FEED = "/_nodestar/feed/overlay";
+
+  const $ = id => document.getElementById(id);
+  const short = s => (!s ? "—" : s.length > 26 ? s.slice(0, 14) + "…" + s.slice(-8) : s);
+
+  function render(d) {
+    $("site").textContent = d.node.site || "—";
+    $("site").title = d.node.site || "";
+    $("self").textContent = short(d.node.self);
+    $("self").title = d.node.self || "";
+    $("network").textContent = d.node.network;
+    $("asof").textContent = new Date(d.generatedAt).toLocaleTimeString();
+
+    const list = $("peers");
+    list.replaceChildren();
+    for (const p of d.peers) {
+      const card = document.createElement("article");
+      card.className = "peer";
+
+      const sig = document.createElement("code");
+      sig.className = "sigil";
+      sig.textContent = short(p.sigil);
+      sig.title = p.sigil;
+      card.append(sig);
+
+      if (p.moniker) {
+        const m = document.createElement("span");
+        m.className = "moniker";
+        // Self-asserted and signed by its owner, but never verified by CupriNet. Saying so beats presenting it
+        // as a name the viewer can rely on.
+        m.textContent = p.moniker;
+        m.title = "Self-asserted and unverified — trust it only by comparing the fingerprint.";
+        card.append(m);
+      }
+
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = `${p.endpoints} endpoint${p.endpoints === 1 ? "" : "s"} · ${p.capabilities}`;
+      card.append(meta);
+
+      list.append(card);
+    }
+
+    // The cap is never silent: if there are more peers than are shown, say so.
+    $("count").textContent = d.total ? (d.shown < d.total ? `${d.shown} of ${d.total}` : `${d.total}`) : "";
+    $("empty").hidden = d.peers.length > 0;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(FEED, { cache: "no-store" });
+      if (!r.ok) throw new Error(r.status);
+      render(await r.json());
+      $("mode").textContent = "gateway — snapshot, polled";
+      document.body.classList.remove("stale");
+    } catch {
+      document.body.classList.add("stale");
+    }
+  }
+
+  poll();
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>

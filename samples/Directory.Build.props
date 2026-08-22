@@ -1,0 +1,8 @@
+<Project>
+  <!--
+    Chains to the repository-root props for the shared TargetFramework and analysis settings, but the samples are a
+    SEPARATE solution: nothing in Nodestar.slnx references them, so a sample can take dependencies (CupriFace, for
+    the one that ships compiled behaviour) without those reaching the product build.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+</Project>

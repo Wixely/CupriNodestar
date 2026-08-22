@@ -80,6 +80,11 @@ public sealed class SiteBuilder
         return this;
     }
 
+    /// <remarks>
+    /// Feeds may be registered right up until the application starts. The dictionary handed to the Shrine is this
+    /// live one, but relying on that is fragile — a feed added after a visitor has already attended will not reach
+    /// them, so register before <c>RunAsync</c>.
+    /// </remarks>
     /// <summary>Publishes a named live feed backed by your own <see cref="IAuspiceSource"/>.</summary>
     public SiteBuilder Feed(string name, IAuspiceSource source)
     {

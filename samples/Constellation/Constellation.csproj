@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A Nodestar sample. Note what is NOT here: no CupriFace, and no compiled UI of any kind. The site is HTML and CSS
+    served over L2, and rendering is the client's job — which is precisely the claim this sample exists to make.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Constellation</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The site travels with the binary so `dotnet run` works from a clean checkout with no extra steps. -->
+    <Content Include="site\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

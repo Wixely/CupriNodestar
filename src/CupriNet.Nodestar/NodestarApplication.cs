@@ -34,10 +34,13 @@ public sealed class NodestarApplication : IAsyncDisposable
     /// <summary>The running node, available once <see cref="StartAsync"/> has returned.</summary>
     public CupriNode Node => _node ?? throw new InvalidOperationException("The Nodestar has not been started yet.");
 
-    /// <summary>Starts the node and begins hosting the site. Returns once both are up.</summary>
+    /// <summary>
+    /// Starts the node and begins hosting the site. Returns once both are up. Calling it twice is a no-op rather
+    /// than an error, so <see cref="RunAsync"/> works whether or not the caller started the app itself.
+    /// </summary>
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (_node is not null) throw new InvalidOperationException("This Nodestar is already running.");
+        if (_node is not null) return;
 
         var dataDir = Path.GetFullPath(_options.DataDirectory);
         Directory.CreateDirectory(dataDir);
@@ -83,6 +86,8 @@ public sealed class NodestarApplication : IAsyncDisposable
             _log.LogWarning("No site content configured — visitors will receive 404 for everything. Call builder.Site.ServeStaticFiles(...) or .Serve(...).");
 
         _node.HostShrine(signet, _site.Handler, _site.Feeds, _options.AdvertiseSiteInLink);
+
+        await SeedAsync(cancellationToken).ConfigureAwait(false);
 
         _log.LogInformation("Nodestar online for network '{Network}'.", _options.Concordium);
         _log.LogInformation("Site address: {Address}", _node.ShrineAddress);
@@ -135,6 +140,46 @@ public sealed class NodestarApplication : IAsyncDisposable
         {
             await _node.DisposeAsync().ConfigureAwait(false);
             _node = null;
+        }
+    }
+
+    /// <summary>
+    /// Bootstraps the overlay from configured seed links. Each is an L1 pairing that exchanges peer records and is
+    /// then dropped — a Nodestar learns who else exists, it does not hold a channel open to them.
+    ///
+    /// <para>Every failure is warned about and swallowed. A node whose seed is offline is not a broken node: it is a
+    /// node that has not met anyone yet, and it must still come up and serve its own site.</para>
+    /// </summary>
+    private async Task SeedAsync(CancellationToken cancellationToken)
+    {
+        if (_options.SeedLinks.Count == 0 || _node is null) return;
+
+        _log.LogInformation("Bootstrapping from {Count} seed link(s)…", _options.SeedLinks.Count);
+
+        foreach (var seed in _options.SeedLinks)
+        {
+            if (string.IsNullOrWhiteSpace(seed)) continue;
+            try
+            {
+                if (!IntonationUri.TryParse(seed, out var intonation, out _))
+                {
+                    _log.LogWarning("Malformed seed link ignored.");
+                    continue;
+                }
+
+                var peer = await _node.ConjoinAsync(intonation, DateTimeOffset.UtcNow, cancellationToken)
+                    .ConfigureAwait(false);
+                await peer.DisposeAsync().ConfigureAwait(false);
+                _log.LogInformation("Seeded from a peer.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning("Seed link failed: {Reason}", ex.Message);
+            }
         }
     }
 
