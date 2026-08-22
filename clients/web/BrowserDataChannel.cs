@@ -107,7 +107,7 @@ internal sealed partial class BrowserDataChannel : IDataChannel
                 case 3: throw new InvalidOperationException("The WebRTC connection closed before it opened.");
             }
 
-            await Task.Delay(16, cancellationToken).ConfigureAwait(false);
+            await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
         }
     }
 
@@ -144,7 +144,7 @@ internal sealed partial class BrowserDataChannel : IDataChannel
             var state = State();
             if (state is 2 or 3) return null;
 
-            await Task.Delay(4, cancellationToken).ConfigureAwait(false);
+            await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
         }
     }
 

@@ -44,6 +44,19 @@
       print: write,
       printErr: write,
       onAbort: (why) => write('[cupri] aborted: ' + why),
+
+      // Nothing keeps the module alive once main() returns, and main returns immediately by design — the managed
+      // side is pumped from here rather than blocking the browser's only thread.
+      noExitRuntime: true,
+
+      onRuntimeInitialized: function () {
+        // The pump. Managed continuations are queued, not run inline, so the browser stays responsive between
+        // frames and the promise chains that complete the WebRTC handshake actually get to run.
+        const tick = Module._cupri_tick;
+        if (!tick) { write('[cupri] cupri_tick missing — the module cannot be driven'); return; }
+        write('[cupri] runtime up, pump started');
+        (function frame() { tick(); requestAnimationFrame(frame); })();
+      },
     };
 
     // Fetch the node's signed link, then load the module. Order matters: the module reads the seed synchronously on

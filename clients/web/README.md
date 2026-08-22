@@ -60,11 +60,36 @@ entire reason to compile to wasm rather than reimplement the protocol in JavaScr
 - **A `<base>` tag is injected at serve time** so the bundle works whether it is reached at `/app` or `/app/`. A
   redirect cannot do this job: ASP.NET treats the two as one route and redirects to itself forever.
 
-## What is proven, and what is not
+## Verified in a real browser (headless Chromium, driven by Playwright)
 
-Proven: the bundle compiles, trims (`TrimMode=full`), links with the shim, loads, and calls across the interop
-boundary — verified by running it under the Emscripten `node`, where `cupri_seed` resolves and returns empty exactly
-as designed for a page-less host.
+- A NativeAOT-LLVM wasm module runs in the browser at all — the `WasmCrypto` probe prints `PROBE OK` with Ed25519,
+  HKDF, ChaCha20-Poly1305 and X25519 all exercised. Previously this was only known under Node.
+- The client bundle loads, `main` runs, and **`DllImport("js")` resolves in both directions**: `cupri_seed` returns
+  the link the page fetched, and `cupri_connect` creates a real `RTCPeerConnection` and `RTCDataChannel`.
+- The node serves every asset correctly, `application/wasm` included, and the seeded Intonation reaches the module.
 
-**Not yet proven: the WebRTC handshake itself.** That needs a real browser against a running node, which is the next
-thing to do. The pieces either side of it are verified; the join between them is not.
+The client currently gets as far as **dialling** and then stops. It does not crash.
+
+## The blocker, and why it is not a bug in this code
+
+**NativeAOT-LLVM wasm has no event-loop integration**: no synchronization context, and no timer thread behind
+`Task.Delay`. An `await` on the browser's only thread does not yield — it blocks the loop that would complete it.
+
+That was measured, not guessed. With a real seed the renderer process *crashed* immediately after
+`createDataChannel`, which is precisely where managed code returned into an awaiting loop. Restructuring so `Main`
+fires and returns rather than awaiting **fixed the crash** — the evidence for the diagnosis.
+
+Two consequences:
+
+- **`Task.Delay` is unusable here.** `BrowserLoop.NextFrameAsync` replaces it, resuming continuations from a pump.
+- **Emscripten's usual remedy is unavailable.** `-sASYNCIFY` does not build: Binaryen's Asyncify pass hits an
+  `UNREACHABLE` and `wasm-opt` fails outright.
+
+So the architecture is the one CupriFace independently arrived at: **JavaScript drives, managed code is pumped**.
+`BrowserLoop.Tick` is written and `requestAnimationFrame` calls it.
+
+**What remains is one build-configuration problem:** exporting `cupri_tick` to JavaScript. Emscripten dead-strips it
+without `-sEXPORTED_FUNCTIONS`, and *with* that flag the module's indirect-call table breaks (`RuntimeError: null
+function` before `main` runs) — adding `_malloc`/`_free` did not help. The likely next thing to try is
+`emscripten_set_main_loop` called *from* managed code, passing a function pointer, so the callback is rooted by having
+its address taken and no export list is involved.

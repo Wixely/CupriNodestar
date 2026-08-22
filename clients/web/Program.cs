@@ -13,6 +13,14 @@ using CupriNet.Vessel;
 
 Console.WriteLine("[cupri] client starting");
 
+// Fire and return. The rAF pump in the host page drives everything from here; awaiting in Main would block
+// the browser's only thread and kill the tab.
+BrowserLoop.Run(RunClientAsync);
+return;
+
+async Task RunClientAsync()
+{
+
 var suite = new BouncyCastleSuite();
 
 // The seed. The node inlined its own signed link when it served this page, which is what removes the signalling
@@ -26,17 +34,33 @@ if (!IntonationUri.TryParse(seed, out var intonation, out var reason))
 
 Console.WriteLine($"[cupri] dialling {intonation.Network} …");
 
+Console.WriteLine("[cupri] stage: seed parsed, dialling");
+
 await using var channel = await BrowserDataChannel.ConnectAsync(intonation, CancellationToken.None);
-Console.WriteLine("[cupri] datachannel open");
+Console.WriteLine("[cupri] stage: datachannel OPEN");
 
 // From here down there is nothing browser-specific left. The DataChannel becomes a Vessel and the real stack runs:
 // Toll, Noise, Pilgrimage, then the site rites — the same code the node executes, which is the whole reason to
 // compile C# to wasm rather than reimplement the protocol in JavaScript.
-await using var node = await CupriNode.CreateAsync(new CupriNodeOptions
+// Isolated deliberately: a CupriNode normally binds a TCP listener, and a browser has no sockets. If this is what
+// kills the tab then the Pilgrim path needs a listener-free construction, which is a finding worth having early.
+Console.WriteLine("[cupri] stage: creating node (binds sockets on a server � the suspect in a browser)");
+CupriNode node;
+try
 {
-    Concordium = intonation.Network.ToString(),
-    Suite = suite,
-});
+    node = await CupriNode.CreateAsync(new CupriNodeOptions
+    {
+        Concordium = intonation.Network.ToString(),
+        Suite = suite,
+    });
+    Console.WriteLine("[cupri] stage: node created");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[cupri] node creation FAILED: {ex.GetType().Name}: {ex.Message}");
+    return;
+}
+await using var _node = node;
 
 var vessel = new DataChannelVessel(channel);
 
@@ -71,7 +95,8 @@ _ = Task.Run(async () =>
 });
 
 // Keep the module alive; the browser event loop drives everything from here.
-await Task.Delay(Timeout.InfiniteTimeSpan);
+// Nothing to wait for: the pump keeps the module alive.
+}
 
 static void Render(OracleResponse page)
 {
