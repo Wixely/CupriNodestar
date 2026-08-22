@@ -1,0 +1,49 @@
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+out/
+artifacts/
+publish/
+
+# Blazor / WASM publish + NativeAOT-LLVM intermediates
+wwwroot/_framework/
+*.wasm
+*.bc
+
+# VS / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+.vscode/
+
+# NuGet
+*.nupkg
+*.snupkg
+.packages/
+project.lock.json
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*.json
+*.trx
+
+# Node (if the on-ramp client picks up any JS tooling)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local run state / secrets
+/data/
+appsettings.*.local.json
+*.local
+
+# Phase-0 probe publish output (regenerate with: dotnet publish probe/WasmCrypto)
+probe/*/bin/
+probe/*/obj/

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The turnkey reference host: a Nodestar you configure rather than compile. It exists so "run a site on CupriNet"
+    needs no C# at all — point it at a directory, set a network, and it serves. The library is the product; this is
+    the thin shell around it, and it is deliberately small enough to read in one sitting.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>cuprinet-nodestar</AssemblyName>
+    <RootNamespace>CupriNet.Nodestar.Host</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

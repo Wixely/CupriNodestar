@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The base package: the builder, the node host, the Kestrel web front, and the L2 Shrine host (Oracle handlers +
+    Auspice feeds), plus Mode-2 server-side rendering.
+
+    Deliberately CupriFace-free. A node serving its site over Tor or a Cloudflare tunnel renders server-side and never
+    serves a browser client, so it must not drag in a UI runtime. CupriFace arrives only with CupriNet.Nodestar.WebRtc,
+    which is the package that serves a client. CI builds THIS project with the CupriFace feed package unavailable so
+    that boundary is a build failure rather than a convention.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>CupriNet.Nodestar</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CupriNode, HostShrine, the Pilgrimage accept path. Pulls Core/Vessel/Codex/Arcanum transitively. -->
+    <PackageReference Include="CupriNet.Hosting" Version="$(CupriNetVersion)" />
+    <!-- Oracle (request/response) and Auspice (live feeds) with their handler seams. -->
+    <PackageReference Include="CupriNet.Rites" Version="$(CupriNetVersion)" />
+  </ItemGroup>
+
+</Project>

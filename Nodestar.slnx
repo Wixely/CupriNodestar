@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/node/">
+    <Project Path="node/cuprinet-nodestar/cuprinet-nodestar.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/CupriNet.Nodestar/CupriNet.Nodestar.csproj" />
+  </Folder>
+</Solution>
