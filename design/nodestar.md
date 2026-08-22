@@ -92,10 +92,10 @@ completely custom L2 protocol — you still get node + web + client + identity f
 | Package | Gives you | Pulls |
 |---|---|---|
 | `CupriNet.Nodestar` | builder, node host, Kestrel web front, intonation page, L2 Shrine host + static/delegate handlers + Auspice feeds, **Mode-2 SSR** | CupriNet core (feed) + ASP.NET Core |
-| `CupriNet.Nodestar.WebRtc` | **Mode-1** browser on-ramp: serves the client, accepts DataChannels | `CupriNet.WebRtc` → CupriWebRTC + **CupriFace** (the client's renderer) |
+| `CupriNet.Nodestar.WebRtc` | **Mode-1** browser on-ramp: serves the client, accepts DataChannels | `CupriNet.WebRtc` → CupriWebRTC. **No CupriFace package reference** — the renderer is compiled *into* the embedded wasm bundle, so it is a build-time dependency of `clients/web`, not a NuGet dependency of anything a host restores. |
 | `cuprinet-nodestar` + `dotnet new nodestar-site` | run turnkey / scaffold a site, config-only | the above |
 
-**CupriFace rides in with `.WebRtc` only, because that is the package that serves a browser client.** A pure
+**CupriFace never rides in as a package at all.** It is compiled into the client bundle that `.WebRtc` embeds, so no server-side project restores it — a stronger separation than the one originally planned. A pure
 static-or-SSR site over Tor needs only the **base** package and stays CupriFace-free — so a CupriFace regression cannot
 break the deployments that never serve a client.
 

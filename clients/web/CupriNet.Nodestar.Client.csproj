@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The served on-ramp client: the real CupriNet client stack compiled to WebAssembly, plus CupriFace as its renderer
+    and a small JS shim for RTCPeerConnection.
+
+    NativeAOT-LLVM only. Mono is ruled out for this project twice over — CupriFace's own notes record that Mono's WASM
+    AOT mis-compiles their engine into interpretation, and the interop here is DllImport into an Emscripten JS library
+    rather than [JSImport], which has no Mono runtime to depend on.
+
+    Not in Nodestar.slnx: it needs the wasm workload, and the product build must not. Its publish output is copied
+    into CupriNet.Nodestar.WebRtc/client/ and embedded there, so a host serves the on-ramp without owning a toolchain.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>CupriNet.Nodestar.Client</RootNamespace>
+
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+
+    <DotNetJsApi>false</DotNetJsApi>
+    <UsingBrowserRuntimeWorkload>false</UsingBrowserRuntimeWorkload>
+    <WasmEnableLegacyJsInterop>false</WasmEnableLegacyJsInterop>
+    <InvariantTimezone>true</InvariantTimezone>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <StackTraceSupport>true</StackTraceSupport>
+    <DebugType>none</DebugType>
+
+    <!-- -O1 keeps the build loop tolerable. A shipping bundle wants -O3 + wasm-opt: the probes measured 4.5 MB
+         gzipped at -O1, and the renderer is 87% of that, so this is where the size work lands. -->
+    <EmccFlags>$(EmccFlags) -O1 -sSUPPORT_LONGJMP=wasm</EmccFlags>
+
+    <ExecutableExtensionName Condition="$([MSBuild]::IsOSPlatform('Windows'))">.exe</ExecutableExtensionName>
+    <IlcHostRid Condition="'$(IlcHostRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</IlcHostRid>
+    <IlcLlvmVersion Condition="'$(IlcLlvmVersion)' == ''">10.0.0-rc.1.26357.1</IlcLlvmVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;
+    </RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CupriFace" Version="$(CupriFaceVersion)" />
+    <PackageReference Include="CupriNet.Hosting" Version="$(CupriNetVersion)" />
+    <PackageReference Include="CupriNet.Alembic.BouncyCastle" Version="$(CupriNetVersion)" />
+    <PackageReference Include="CupriNet.Rites" Version="$(CupriNetVersion)" />
+
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
+    <PackageReference Include="runtime.$(IlcHostRid).Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
+
+    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.116.1"
+                      GeneratePathProperty="true" ExcludeAssets="all" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.WebAssembly" Version="8.3.0.1"
+                      GeneratePathProperty="true" ExcludeAssets="all" />
+
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_LLVM_ROOT=$(EmscriptenUpstreamBinPath)" />
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_BINARYEN_ROOT=$(EmscriptenSdkToolsPath)" />
+    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_NODE_JS=$(EmscriptenNodeBinPath)node$(ExecutableExtensionName)" />
+    <EmscriptenEnvVars Include="EM_CACHE=$(EmscriptenCacheSdkCacheDir)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The RTCPeerConnection shim, linked into the module. Without it the DllImport("js") targets are unresolved
+         symbols and the emcc link fails outright — which is the failure mode you want, rather than a runtime stub. -->
+    <LinkerArg Include="--js-library &quot;$(MSBuildProjectDirectory)/wwwroot/imports.js&quot;" />
+
+    <NativeLibrary Include="$(PkgSkiaSharp_NativeAssets_WebAssembly)/buildTransitive/netstandard1.0/libSkiaSharp.a/3.1.56/st/libSkiaSharp.a" />
+    <NativeLibrary Include="$(PkgHarfBuzzSharp_NativeAssets_WebAssembly)/buildTransitive/netstandard1.0/libHarfBuzzSharp.a/3.1.56/st/libHarfBuzzSharp.a" />
+    <DirectPInvoke Include="libSkiaSharp" />
+    <DirectPInvoke Include="libHarfBuzzSharp" />
+    <DirectPInvoke Include="js" />
+  </ItemGroup>
+
+  <Target Name="CopyHostPage" AfterTargets="Publish">
+    <Copy SourceFiles="wwwroot/index.html" DestinationFolder="$(PublishDir)" />
+  </Target>
+
+</Project>

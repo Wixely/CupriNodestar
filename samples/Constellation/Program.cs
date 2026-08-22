@@ -1,5 +1,6 @@
 using Constellation;
 using CupriNet.Nodestar;
+using CupriNet.Nodestar.WebRtc;
 
 // Constellation — a Nodestar that serves a website whose content is the node's own view of the network.
 //
@@ -15,6 +16,10 @@ builder.Node.Concordium = builder.Configuration["Concordium"] ?? "constellation-
 builder.Site.ServeStaticFiles(
     builder.Configuration["SiteRoot"] ?? Path.Combine(AppContext.BaseDirectory, "site"));
 
+// Mode 1: give the node a WebRTC endpoint and serve the WASM client that dials it. Mode 2 keeps working either way,
+// which is why this is additive rather than a switch.
+builder.UseWebRtc();
+
 var app = builder.Build();
 
 // Registered BEFORE the app starts, because the Shrine is handed its feeds when it is hosted. The node the feed
@@ -27,6 +32,7 @@ Console.WriteLine("  Constellation");
 Console.WriteLine($"  Site      http://localhost:{builder.Node.WebPort}/            (Mode 2 — server-rendered)");
 Console.WriteLine($"  Feed      http://localhost:{builder.Node.WebPort}/_nodestar/feed/overlay");
 Console.WriteLine($"  Node      http://localhost:{builder.Node.WebPort}/_nodestar   (link + QR)");
+Console.WriteLine($"  Client    http://localhost:{builder.Node.WebPort}/_nodestar/app (Mode 1 � WASM over WebRTC)");
 Console.WriteLine();
 
 await app.RunAsync();

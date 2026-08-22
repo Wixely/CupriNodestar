@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/CupriNet.Nodestar/CupriNet.Nodestar.csproj" />
+    <Project Path="src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj" />
   </Folder>
 </Solution>

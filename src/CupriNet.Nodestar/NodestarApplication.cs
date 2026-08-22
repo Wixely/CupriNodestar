@@ -16,13 +16,23 @@ public sealed class NodestarApplication : IAsyncDisposable
     private readonly NodestarOptions _options;
     private readonly SiteBuilder _site;
     private readonly ILogger _log;
+    private readonly Func<NodestarOptions, Action<string>, IWebRtcTransport?>? _transportFactory;
+    private readonly Func<string, ClientAsset?>? _clientAssets;
     private CupriNode? _node;
+    private IWebRtcTransport? _webRtc;
 
-    internal NodestarApplication(NodestarOptions options, SiteBuilder site, ILoggerFactory loggerFactory)
+    internal NodestarApplication(
+        NodestarOptions options,
+        SiteBuilder site,
+        ILoggerFactory loggerFactory,
+        Func<NodestarOptions, Action<string>, IWebRtcTransport?>? transportFactory = null,
+        Func<string, ClientAsset?>? clientAssets = null)
     {
         _options = options;
         _site = site;
         _log = loggerFactory.CreateLogger("Nodestar");
+        _transportFactory = transportFactory;
+        _clientAssets = clientAssets;
     }
 
     /// <summary>Creates a builder bound to <c>appsettings.json</c>, <c>CUPRINET_NODESTAR_*</c> and the command line.</summary>
@@ -54,6 +64,10 @@ public sealed class NodestarApplication : IAsyncDisposable
 
         var onionOnly = _options.TorOnly;
 
+        // The browser on-ramp, when the WebRtc package supplied one. Its ICE credentials and DTLS fingerprint are
+        // stamped into every Intonation this node mints, which is what lets a browser dial back with no signalling.
+        _webRtc = _transportFactory?.Invoke(_options, message => _log.LogInformation("{Message}", message));
+
         _node = await CupriNode.CreateAsync(new CupriNodeOptions
         {
             Concordium = _options.Concordium,
@@ -62,6 +76,7 @@ public sealed class NodestarApplication : IAsyncDisposable
             Suite = suite,
             SecretStore = store,
             Moniker = _options.Moniker,
+            WebRtcTransport = _webRtc,
             Mode = onionOnly ? ReachabilityMode.TorOnly : ReachabilityMode.Standard,
 
             // Lodestar-grade defaults: a Nodestar is expected to be reachable and to stay warm, because it is
@@ -118,7 +133,7 @@ public sealed class NodestarApplication : IAsyncDisposable
                 // siteAddress is read through a delegate rather than captured: it is only known after the Shrine is
                 // hosted, and a later multi-Shrine node may change it while the front is running.
                 var gateway = _options.EnableGateway ? new SiteGateway(_site) : null;
-                var front = new NodestarWebFront(links, _options, () => SiteAddress, gateway, _log);
+                var front = new NodestarWebFront(links, _options, () => SiteAddress, gateway, _clientAssets, _log);
                 await front.RunAsync(stopping.Token).ConfigureAwait(false);
             }
             else
@@ -140,6 +155,12 @@ public sealed class NodestarApplication : IAsyncDisposable
         {
             await _node.DisposeAsync().ConfigureAwait(false);
             _node = null;
+        }
+
+        if (_webRtc is not null)
+        {
+            await _webRtc.DisposeAsync().ConfigureAwait(false);
+            _webRtc = null;
         }
     }
 

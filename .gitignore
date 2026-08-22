@@ -47,3 +47,10 @@ appsettings.*.local.json
 # Phase-0 probe publish output (regenerate with: dotnet publish probe/WasmCrypto)
 probe/*/bin/
 probe/*/obj/
+
+# VS Code launch data directories
+/.run/
+
+# Staged client bundle (regenerate with the "client: stage into WebRtc package" task)
+src/CupriNet.Nodestar.WebRtc/client/*
+!src/CupriNet.Nodestar.WebRtc/client/.gitkeep

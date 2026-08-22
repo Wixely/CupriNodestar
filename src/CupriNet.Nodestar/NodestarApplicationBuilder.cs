@@ -1,3 +1,4 @@
+using CupriNet.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -51,6 +52,26 @@ public sealed class NodestarApplicationBuilder
             o.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
         }));
 
+    /// <summary>
+    /// Supplies the optional WebRTC transport (the browser on-ramp). The seam lives here rather than in the base
+    /// package's own code so that <c>CupriNet.Nodestar</c> never references a WebRTC stack: <c>IWebRtcTransport</c>
+    /// is a CupriNet.Hosting interface, and only <c>CupriNet.Nodestar.WebRtc</c> supplies an implementation.
+    /// </summary>
+    public NodestarApplicationBuilder ConfigureTransport(
+        Func<NodestarOptions, Action<string>, IWebRtcTransport?> factory)
+    {
+        TransportFactory = factory ?? throw new ArgumentNullException(nameof(factory));
+        return this;
+    }
+
+    /// <summary>
+    /// Supplies the served browser client's files, keyed by relative path. Set by the WebRtc package; null means no
+    /// client is served, which is the correct state for a gateway-only deployment.
+    /// </summary>
+    public Func<string, ClientAsset?>? ClientAssets { get; set; }
+
+    internal Func<NodestarOptions, Action<string>, IWebRtcTransport?>? TransportFactory { get; private set; }
+
     /// <summary>Assembles the application. Nothing binds a port or touches the network until <c>RunAsync</c>.</summary>
-    public NodestarApplication Build() => new(Node, Site, LoggerFactory);
+    public NodestarApplication Build() => new(Node, Site, LoggerFactory, TransportFactory, ClientAssets);
 }

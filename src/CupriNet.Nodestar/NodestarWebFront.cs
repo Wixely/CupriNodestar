@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using CupriNet.Hosting;
 using Microsoft.AspNetCore.Builder;
@@ -22,6 +23,7 @@ internal sealed class NodestarWebFront(
     NodestarOptions options,
     Func<string?> siteAddress,
     SiteGateway? gateway,
+    Func<string, ClientAsset?>? clientAssets,
     ILogger log)
 {
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -67,6 +69,30 @@ internal sealed class NodestarWebFront(
         app.MapGet("/healthz", () => Results.Text("ok"));
         app.MapGet($"{NodePrefix}/healthz", () => Results.Text("ok"));
 
+        if (clientAssets is not null)
+        {
+            // Mode 1 lives under the node prefix rather than at the root. The gateway keeps "/" because it works in
+            // every deployment row; the client needs a reachable WebRTC endpoint, which not every row has.
+            // One catch-all, not two routes: a `**` segment also matches the empty string, so an explicit "/app/"
+            // route beside it is ambiguous and every request 500s. Serve() maps empty to index.html.
+            //
+            // A redirect to the trailing-slash form does not work either � ASP.NET treats "/app" and "/app/" as the
+            // same route, so it redirects to itself forever. Hence the <base> tag injected below: it fixes relative
+            // URL resolution without depending on the shape of the request path at all.
+            app.MapGet($"{NodePrefix}/app", () => Serve(""));
+            app.MapGet($"{NodePrefix}/app/{{**path}}", (string path) => Serve(path));
+
+            // The seed. The page needs this node's signed Intonation to dial back, and inlining it is what removes
+            // the signalling server: the browser already holds the remote description before it opens a socket.
+            app.MapGet($"{NodePrefix}/app/intonation.json", (HttpContext ctx) =>
+            {
+                var snapshot = Snapshot(ctx);
+                return Results.Content(
+                    new JsonObject { ["link"] = snapshot.Link }.ToJsonString(),
+                    "application/json; charset=utf-8");
+            });
+        }
+
         if (gateway is not null)
         {
             // Mode 2: the site itself, rendered server-side. A point-in-time snapshot of a feed is available too, so
@@ -97,6 +123,26 @@ internal sealed class NodestarWebFront(
 
         await app.RunAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Serves one file of the browser client, or 404 when the client was not built into this host.</summary>
+    private IResult Serve(string path)
+    {
+        var isIndex = string.IsNullOrEmpty(path) || path is "index.html";
+        var asset = clientAssets?.Invoke(isIndex ? "index.html" : path);
+        if (asset is null) return Results.NotFound();
+
+        // The client's own markup uses relative urls, so it works unchanged whether it is served from "/app" or
+        // "/app/" � or, later, from somewhere else entirely. Stamping the base at serve time is what makes the
+        // bundle mount-point-agnostic instead of hard-coding where it lives.
+        if (!isIndex) return Results.Bytes(asset.Content, asset.ContentType);
+
+        var html = Encoding.UTF8.GetString(asset.Content)
+            .Replace("<head>", $"<head><base href=\"{ClientPath}/\">", StringComparison.Ordinal);
+        return Results.Content(html, asset.ContentType);
+    }
+
+    /// <summary>Where the browser client is mounted. Used for the injected &lt;base&gt; and nothing else.</summary>
+    private const string ClientPath = "/_nodestar/app";
 
     /// <summary>
     /// Picks the link class by the port the request arrived on. This is the whole reason the Tor face is a separate
