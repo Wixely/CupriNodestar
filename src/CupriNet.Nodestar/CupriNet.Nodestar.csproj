@@ -14,6 +14,15 @@
     <RootNamespace>CupriNet.Nodestar</RootNamespace>
   </PropertyGroup>
 
+  <!-- The gateway and the site surface are internal: they are implementation, not API an author should bind to.
+       Reaching them through the public surface alone would mean standing up a node and a Kestrel host to test what
+       are pure unit concerns, so the test assembly is let in instead. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>CupriNet.Nodestar.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

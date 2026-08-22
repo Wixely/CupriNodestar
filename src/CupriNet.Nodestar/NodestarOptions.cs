@@ -66,6 +66,13 @@ public sealed class NodestarOptions
     public bool EnableWebFront { get; set; } = true;
 
     /// <summary>
+    /// Serve the site over plain HTTP as well (Mode 2, the L2→HTTP gateway). This is what makes a Cloudflare tunnel
+    /// or an onion work at all, since neither can carry inbound WebRTC UDP. It renders a point-in-time snapshot and
+    /// cannot push updates — live data is a Mode-1 feature. Scoped to this node's <b>own</b> Shrine.
+    /// </summary>
+    public bool EnableGateway { get; set; } = true;
+
+    /// <summary>
     /// A second HTTP port for an onion service to forward to. Requests arriving here are served an <b>onion-only</b>
     /// link, so a visitor who came through Tor is never handed this node's clearnet beacons. Unset means no Tor face.
     /// </summary>

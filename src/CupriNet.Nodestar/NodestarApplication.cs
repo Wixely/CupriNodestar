@@ -112,7 +112,8 @@ public sealed class NodestarApplication : IAsyncDisposable
 
                 // siteAddress is read through a delegate rather than captured: it is only known after the Shrine is
                 // hosted, and a later multi-Shrine node may change it while the front is running.
-                var front = new NodestarWebFront(links, _options, () => SiteAddress, _log);
+                var gateway = _options.EnableGateway ? new SiteGateway(_site) : null;
+                var front = new NodestarWebFront(links, _options, () => SiteAddress, gateway, _log);
                 await front.RunAsync(stopping.Token).ConfigureAwait(false);
             }
             else

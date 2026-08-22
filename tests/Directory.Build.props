@@ -1,0 +1,4 @@
+<Project>
+  <!-- Chain to the repository-root props. Tests stay unpackable (the root default). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+</Project>

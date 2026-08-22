@@ -116,6 +116,15 @@ Mode 1 — DIRECT ON-RAMP (E2E)                        Mode 2 — L2→HTTP GATE
 
 - **Mode 1 (direct on-ramp)** — the served page *is* a CupriNode Pilgrim; it opens its own DataChannel back and speaks
   the real protocol. Direct, sandboxed, live. **Public / clearnet-reachable hosts.**
+> **Implementation note — Mode 2 calls the handler directly, not a loopback Pilgrimage.** This section sketched the
+> gateway as the node running a Pilgrim client against its own Shrine over loopback. As built, it invokes the
+> `IOracleHandler` in-process instead. The reason: the Pilgrim side is a *node-level* API, so a real loopback would
+> mean a second `CupriNode` in-process, a TCP listener and a Noise handshake per visit — to reach a handler this
+> process already holds. The argument for loopback was that **no third party sits in the middle**; a direct call
+> satisfies that more strongly, since nothing reaches a wire at all, and the content is byte-identical because both
+> paths end at the same handler. **This holds only for an own-hosted Shrine** — foreign-Shrine gatewaying (Phase 4)
+> genuinely needs a Pilgrimage, and will get one.
+
 - **Mode 2 (gateway / SSR)** — **SSR = *server-side rendering*: the node fetches the L2 content itself, turns it into
   finished HTML, and serves that over ordinary HTTP; the browser receives a completed page and runs no client at all.**
   It is what makes **IIS / reverse-proxy / Cloudflare / Tor** work: no browser WebRTC required. **When the Nodestar

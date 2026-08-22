@@ -21,6 +21,7 @@ internal sealed class NodestarWebFront(
     NodestarLinkProvider links,
     NodestarOptions options,
     Func<string?> siteAddress,
+    SiteGateway? gateway,
     ILogger log)
 {
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -38,11 +39,16 @@ internal sealed class NodestarWebFront(
 
         var app = builder.Build();
 
-        app.MapGet("/", (HttpContext ctx) =>
+        // Everything the NODE serves about itself lives under one reserved prefix, so the site owns the rest of the
+        // namespace. A Nodestar behind a tunnel or an onion is a website host first: a visitor typing the hostname
+        // wants the site, not an operator page.
+        const string NodePrefix = "/_nodestar";
+
+        app.MapGet(NodePrefix, (HttpContext ctx) =>
             Results.Content(IntonationPage.Render(Snapshot(ctx), siteAddress(), options), "text/html; charset=utf-8"));
 
         // Polled by the page. Kept separate from the HTML so a refresh costs a few hundred bytes, not a re-render.
-        app.MapGet("/link.json", (HttpContext ctx) =>
+        app.MapGet($"{NodePrefix}/link.json", (HttpContext ctx) =>
         {
             var snapshot = Snapshot(ctx);
             var json = new JsonObject
@@ -56,12 +62,38 @@ internal sealed class NodestarWebFront(
             return Results.Content(json.ToJsonString(), "application/json; charset=utf-8");
         });
 
-        // A liveness probe that says nothing about the node — useful behind a proxy, harmless to expose.
+        // A liveness probe that says nothing about the node — useful behind a proxy, harmless to expose. Kept at the
+        // root as well as under the prefix because proxies and orchestrators expect to find it there.
         app.MapGet("/healthz", () => Results.Text("ok"));
+        app.MapGet($"{NodePrefix}/healthz", () => Results.Text("ok"));
 
-        log.LogInformation("Web front listening on http://0.0.0.0:{Port}{Tor}.",
+        if (gateway is not null)
+        {
+            // Mode 2: the site itself, rendered server-side. A point-in-time snapshot of a feed is available too, so
+            // a gateway visitor sees live-ish data even though nothing can be pushed to them.
+            app.MapGet($"{NodePrefix}/feed/{{name}}", async (string name, HttpContext ctx) =>
+            {
+                var snapshot = await gateway.SnapshotAsync(name, ctx.RequestAborted).ConfigureAwait(false);
+                return snapshot is null
+                    ? Results.NotFound()
+                    : Results.Bytes(snapshot, "application/octet-stream");
+            });
+
+            // The catch-all goes last; the explicit routes above win on specificity, so a site can never shadow the
+            // node's own endpoints by serving a file at that path.
+            app.MapGet("/{**path}", gateway.HandleAsync);
+            app.MapMethods("/{**path}", ["HEAD"], gateway.HandleAsync);
+        }
+        else
+        {
+            // With no gateway there is nothing to serve at the root, so send visitors to the page that does exist.
+            app.MapGet("/", () => Results.Redirect(NodePrefix));
+        }
+
+        log.LogInformation("Web front listening on http://0.0.0.0:{Port}{Tor} — site at /, node at {Prefix}.",
             options.WebPort,
-            options.TorFacePort is int p && p != options.WebPort ? $" (Tor face :{p})" : string.Empty);
+            options.TorFacePort is int p && p != options.WebPort ? $" (Tor face :{p})" : string.Empty,
+            NodePrefix);
 
         await app.RunAsync(cancellationToken).ConfigureAwait(false);
     }
