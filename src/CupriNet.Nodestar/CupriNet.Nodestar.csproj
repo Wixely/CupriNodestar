@@ -23,6 +23,8 @@
     <PackageReference Include="CupriNet.Hosting" Version="$(CupriNetVersion)" />
     <!-- Oracle (request/response) and Auspice (live feeds) with their handler seams. -->
     <PackageReference Include="CupriNet.Rites" Version="$(CupriNetVersion)" />
+    <!-- The intonation page renders the node's link as a QR so a phone can join by camera. Small, no native deps. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
 </Project>

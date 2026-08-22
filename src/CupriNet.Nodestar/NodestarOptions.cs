@@ -65,6 +65,18 @@ public sealed class NodestarOptions
     /// <summary>Serve the clearnet web front at all. Off makes this a headless Shrine host with no HTTP surface.</summary>
     public bool EnableWebFront { get; set; } = true;
 
+    /// <summary>
+    /// A second HTTP port for an onion service to forward to. Requests arriving here are served an <b>onion-only</b>
+    /// link, so a visitor who came through Tor is never handed this node's clearnet beacons. Unset means no Tor face.
+    /// </summary>
+    public int? TorFacePort { get; set; }
+
+    /// <summary>How long a minted link stays valid.</summary>
+    public int LinkLifetimeMinutes { get; set; } = 60;
+
+    /// <summary>How often the served link is re-minted. Shorter means fresher reachability, more minting.</summary>
+    public int LinkRefreshSeconds { get; set; } = 120;
+
     // ---- Overlay behaviour ----------------------------------------------------------------------------------
 
     /// <summary>Seconds between overlay gossip rounds.</summary>

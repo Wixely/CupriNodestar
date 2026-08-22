@@ -103,7 +103,22 @@ public sealed class NodestarApplication : IAsyncDisposable
 
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, stopping.Token).ConfigureAwait(false);
+            if (_options.EnableWebFront)
+            {
+                var links = new NodestarLinkProvider(
+                    Node,
+                    TimeSpan.FromMinutes(_options.LinkLifetimeMinutes),
+                    TimeSpan.FromSeconds(_options.LinkRefreshSeconds));
+
+                // siteAddress is read through a delegate rather than captured: it is only known after the Shrine is
+                // hosted, and a later multi-Shrine node may change it while the front is running.
+                var front = new NodestarWebFront(links, _options, () => SiteAddress, _log);
+                await front.RunAsync(stopping.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, stopping.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
