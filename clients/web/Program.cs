@@ -62,9 +62,17 @@ static async Task RunClientAsync()
     BrowserRenderer.Show(page.AsText());
     Console.WriteLine("[cupri] painted");
 
-    // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage.
+    // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage. Each
+    // message binds into the document and repaints: the site has no JavaScript engine, so keeping the view current
+    // is the client's job, not the page's.
     await foreach (var frame in shrine.AttendAsync("overlay"))
+    {
         Console.WriteLine($"[cupri] feed {frame.Kind} ({frame.Payload.Length} bytes)");
+        if (frame.Kind is AuspiceFrameKind.Snapshot or AuspiceFrameKind.Update)
+            BrowserRenderer.Update(frame.Payload);
+        else if (frame.Kind is AuspiceFrameKind.Sealed)
+            Console.WriteLine($"[cupri] feed sealed: {frame.AsText()}");
+    }
 
     Console.WriteLine("[cupri] feed ended");
 }

@@ -111,7 +111,32 @@ nothing, which reads as a broken renderer rather than a missing asset.
 Verified by sampling the canvas, not by trusting a log line: **1280x432, every pixel opaque, 64 distinct colours**
 with antialiasing greys — real typography, correct layout, the panel's rounded border and all.
 
+## Live data, and why a Document-tier site has no script
+
+**A Document-tier site cannot use JavaScript.** CupriFace embeds no JS engine — which is most of why a hostile site is
+harmless here — so a page's `<script>` never runs. Live values arrive through CupriFace's binding instead: the site
+writes `{{ node.site }}` and `data-repeat="peers"`, and the **client** binds each Auspice message and asks the engine
+to rebuild. Keeping the view current is the client's job, not the page's.
+
+`FeedModel` is what makes that work without the client knowing the site's shape: it wraps the feed's JSON and
+implements **`IBindableAccessor`**. Two reasons, both load-bearing:
+
+- **Generic.** A concrete C# model would mean the client shipping a copy of every site's schema. Wrapping the payload
+  lets the site own its own contract and keeps the client a renderer.
+- **AOT-safe.** CupriFace's binder falls back to reflection for ordinary models, and its own source notes that
+  fallback is *trimmed away in a published AOT build* — at which point binding silently resolves to nothing and every
+  value renders empty. This client is published `TrimMode=full`, so the accessor is the only route.
+
+Verified end to end: with the page already open, starting a second node made **`Peers 0 of 0` become `1 of 1`** with
+its card and moniker, and `As of` advance — no reload, over the same Pilgrimage that fetched the page.
+
+## A CSS limit worth knowing
+
+`grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr))` is **not** supported — the cards collapsed to a ~30px
+column with text spilling out. Grid with explicit tracks and spans works; the auto-fill/minmax track function does
+not. Flex wrap with a basis says the same thing and is fully supported.
+
 ## What remains
 
-The connection panel is still a log rather than the designed panel, and the page is painted once rather than
-re-painted as feed updates arrive — the pump is there, the redraw is not wired to it.
+Nothing is wired to a resize, so the canvas renders at its first size. And the client is still a single hard-coded
+visit — an address bar, and the roaming that goes with it, is the next real feature.

@@ -58,6 +58,28 @@ internal static unsafe partial class BrowserRenderer
         Paint();
     }
 
+    /// <summary>
+    /// Applies a feed message to the document and repaints.
+    ///
+    /// <para>This is what makes a Document-tier site live. It has no JavaScript engine to run, so a snapshot or
+    /// update cannot be handled by the page itself — the client binds the payload and asks the engine to rebuild.</para>
+    /// </summary>
+    public static void Update(ReadOnlySpan<byte> payload)
+    {
+        if (_document is null) return;
+
+        var model = FeedModel.Parse(payload);
+        if (model is null)
+        {
+            Console.WriteLine("[cupri] feed message was not a JSON object; ignored");
+            return;
+        }
+
+        _document.Bind(model);
+        _document.Refresh();
+        Paint();
+    }
+
     /// <summary>Renders the current document to the canvas at its present size.</summary>
     public static void Paint()
     {

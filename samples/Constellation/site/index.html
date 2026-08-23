@@ -2,61 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Constellation</title>
-  <!-- Inlined, not linked. An Oracle consult is ONE message over a channel where every fetch is a full
-       request/response round trip, so a page that links its stylesheet costs two. A self-contained document is
-       one consult, and it is also what CupriFace expects: it collects <style> elements from the DOM. -->
+  <!-- Inlined, not linked. An Oracle consult is ONE message over a channel where every fetch is a full round trip,
+       so a page that links its stylesheet costs two. A self-contained document is one consult — and it is what
+       CupriFace expects anyway, since it collects <style> elements from the DOM. -->
   <style>
-    :root {
-      color-scheme: light dark;
-      --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root { --fg: #e9e9ee; --dim: #9797a3; --bg: #121216; --card: #1b1b21; --line: #2b2b34; --accent: #a58cff; }
-    }
+    :root { --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff; }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
-      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      transition: opacity .2s;
+      font: 16px/1.55 system-ui, sans-serif;
     }
-    body.stale { opacity: .45; }
 
     main { max-width: 50rem; margin: 0 auto; }
 
-    header { margin-bottom: 1.5rem; }
-    h1 { font-size: 1.4rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+    h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
     h2 { font-size: .95rem; margin: 1.75rem 0 .75rem; }
-    .sub { color: var(--dim); margin: 0; font-size: .92rem; }
-
-    .count { color: var(--dim); font-weight: 400; font-size: .85rem; margin-left: .35rem; }
+    .sub { color: var(--dim); margin: 0 0 1.5rem; font-size: .92rem; }
+    .count { color: var(--dim); font-weight: 400; font-size: .85rem; }
 
     .panel {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px;
       padding: .35rem .95rem; margin-bottom: .5rem;
     }
     .row { display: flex; gap: 1rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--line); }
-    .row:last-child { border-bottom: 0; }
     .k { color: var(--dim); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; min-width: 5.5rem; }
-    .v { font-size: .88rem; word-break: break-all; }
+    .v { font-size: .88rem; word-break: break-all; font-family: ui-monospace, monospace; }
     .accent { color: var(--accent); font-weight: 600; }
 
-    code, .sigil { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-
-    .peers { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+    /* Flex rather than `grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr))`. CupriFace supports grid with
+       spans, but not the auto-fill/minmax track function — with it the cards collapsed to a ~30px column and their
+       text spilled out. Flex wrap with a basis is the supported way to say the same thing. */
+    .peers { display: flex; flex-wrap: wrap; gap: .5rem; }
     .peer {
+      flex: 1 1 16rem; min-width: 0;
       background: var(--card); border: 1px solid var(--line); border-radius: 10px;
       padding: .7rem .85rem; display: flex; flex-direction: column; gap: .2rem;
     }
-    .sigil { font-size: .82rem; }
+    .sigil { font-family: ui-monospace, monospace; font-size: .82rem; word-break: break-all; }
     .moniker { font-size: .9rem; font-weight: 600; }
     .meta { color: var(--dim); font-size: .78rem; }
-
-    .empty { color: var(--dim); font-size: .9rem; }
-    .empty[hidden] { display: none; }
 
     footer { color: var(--dim); font-size: .78rem; margin-top: 2rem; }
   </style>
@@ -72,90 +59,30 @@
     The connection panel. It names the peer this page arrived from, so moving between nodes is unmistakable rather
     than inferred: two Constellation graphs otherwise look alike, and the single most interesting fact — that you
     just moved to a different, independently-addressed host — would be the one thing not on screen.
+
+    Bound, not scripted. A Document-tier site has NO JavaScript engine to run: CupriFace renders HTML and CSS and
+    deliberately embeds no JS runtime, which is most of why a hostile site is harmless here. Live values arrive
+    through {{ }} binding against the feed payload instead, which the client refreshes on every update.
   -->
-  <section class="panel" id="connection">
-    <div class="row"><span class="k">Site</span><code class="v accent" id="site">—</code></div>
-    <div class="row"><span class="k">Node</span><code class="v" id="self">—</code></div>
-    <div class="row"><span class="k">Network</span><span class="v" id="network">—</span></div>
-    <div class="row"><span class="k">Mode</span><span class="v" id="mode">—</span></div>
-    <div class="row"><span class="k">As of</span><span class="v" id="asof">—</span></div>
+  <section class="panel">
+    <div class="row"><span class="k">Site</span><span class="v accent">{{ node.site }}</span></div>
+    <div class="row"><span class="k">Node</span><span class="v">{{ node.self }}</span></div>
+    <div class="row"><span class="k">Network</span><span class="v">{{ node.network }}</span></div>
+    <div class="row"><span class="k">As of</span><span class="v">{{ generatedAt }}</span></div>
   </section>
 
-  <section>
-    <h2>Peers <span class="count" id="count"></span></h2>
-    <div id="peers" class="peers"></div>
-    <p class="empty" id="empty">No peers yet. Seed this node from another's link and it will fill in.</p>
-  </section>
+  <h2>Peers <span class="count">{{ shown }} of {{ total }}</span></h2>
 
-  <footer id="footer"></footer>
+  <!-- One card per peer, instantiated by the engine from the feed's array. -->
+  <div class="peers">
+    <article class="peer" data-repeat="peers">
+      <code class="sigil">{{ sigil }}</code>
+      <span class="moniker">{{ moniker }}</span>
+      <span class="meta">{{ endpoints }} endpoint(s) · {{ capabilities }}</span>
+    </article>
+  </div>
+
+  <footer>Seed a second node from this one's link and it will appear here — over the same connection.</footer>
 </main>
-
-<script>
-  // Mode 2 today: the gateway serves a point-in-time snapshot, because a server-rendered page has no channel back
-  // that the no-WebSockets rule permits. Under Mode 1 the client attends the same feed and this becomes live —
-  // same payload, same snapshot, pushed instead of polled.
-  const FEED = "/_nodestar/feed/overlay";
-
-  const $ = id => document.getElementById(id);
-  const short = s => (!s ? "—" : s.length > 26 ? s.slice(0, 14) + "…" + s.slice(-8) : s);
-
-  function render(d) {
-    $("site").textContent = d.node.site || "—";
-    $("site").title = d.node.site || "";
-    $("self").textContent = short(d.node.self);
-    $("self").title = d.node.self || "";
-    $("network").textContent = d.node.network;
-    $("asof").textContent = new Date(d.generatedAt).toLocaleTimeString();
-
-    const list = $("peers");
-    list.replaceChildren();
-    for (const p of d.peers) {
-      const card = document.createElement("article");
-      card.className = "peer";
-
-      const sig = document.createElement("code");
-      sig.className = "sigil";
-      sig.textContent = short(p.sigil);
-      sig.title = p.sigil;
-      card.append(sig);
-
-      if (p.moniker) {
-        const m = document.createElement("span");
-        m.className = "moniker";
-        // Self-asserted and signed by its owner, but never verified by CupriNet. Saying so beats presenting it
-        // as a name the viewer can rely on.
-        m.textContent = p.moniker;
-        m.title = "Self-asserted and unverified — trust it only by comparing the fingerprint.";
-        card.append(m);
-      }
-
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      meta.textContent = `${p.endpoints} endpoint${p.endpoints === 1 ? "" : "s"} · ${p.capabilities}`;
-      card.append(meta);
-
-      list.append(card);
-    }
-
-    // The cap is never silent: if there are more peers than are shown, say so.
-    $("count").textContent = d.total ? (d.shown < d.total ? `${d.shown} of ${d.total}` : `${d.total}`) : "";
-    $("empty").hidden = d.peers.length > 0;
-  }
-
-  async function poll() {
-    try {
-      const r = await fetch(FEED, { cache: "no-store" });
-      if (!r.ok) throw new Error(r.status);
-      render(await r.json());
-      $("mode").textContent = "gateway — snapshot, polled";
-      document.body.classList.remove("stale");
-    } catch {
-      document.body.classList.add("stale");
-    }
-  }
-
-  poll();
-  setInterval(poll, 2000);
-</script>
 </body>
 </html>
