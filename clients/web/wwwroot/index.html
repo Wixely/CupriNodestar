@@ -8,18 +8,38 @@
     :root { color-scheme: light dark; --fg:#e8e8ea; --dim:#9a9aa2; --bg:#141416; --accent:#9d86ff; }
     body { margin:0; background:var(--bg); color:var(--fg);
            font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
-    header { padding:.9rem 1rem; border-bottom:1px solid #2c2c33; display:flex; gap:.75rem; align-items:baseline; }
+    header { padding:.7rem 1rem; border-bottom:1px solid #2c2c33; display:flex; gap:.75rem; align-items:center;
+             flex-wrap:wrap; }
     h1 { font-size:.95rem; margin:0; color:var(--accent); letter-spacing:.02em; }
     .dim { color:var(--dim); font-size:.8rem; }
+    #go { display:flex; gap:.4rem; flex:1 1 22rem; }
+    #link { flex:1; min-width:0; background:#0e0e11; color:var(--fg); border:1px solid #2c2c33; border-radius:6px;
+            padding:.35rem .6rem; font:inherit; font-size:.78rem; }
+    #link:focus { outline:none; border-color:var(--accent); }
+    #go button { background:var(--accent); color:#141416; border:0; border-radius:6px; padding:.35rem .9rem;
+                 font:inherit; font-size:.78rem; font-weight:700; cursor:pointer; }
     #viewport { display:block; width:100%; height:60vh; background:#0e0e11; }
     #log { padding:.75rem 1rem; margin:0; white-space:pre-wrap; word-break:break-word;
            color:var(--dim); font-size:.78rem; max-height:30vh; overflow:auto; }
   </style>
 </head>
 <body>
+  <!--
+    Client CHROME. Everything in this header is written by the client and never by a site: the site paints into the
+    canvas below and nothing else. A site that could write here could claim to be a node it is not, which is the
+    address-bar spoofing problem imported wholesale.
+  -->
   <header>
     <h1>CupriNet</h1>
-    <span class="dim">the page is clearnet; everything below arrives over WebRTC</span>
+    <form id="go">
+      <!-- A LINK, not a bare cupri1… address. A Signet names a site but does not say where to reach it; in v1 the
+           address travels with its reachability inside the link. Resolving a bare address to a moving host is L1
+           roaming, which does not exist yet — so this asks for what actually works. -->
+      <input id="link" type="text" spellcheck="false" autocomplete="off"
+             placeholder="cuprinet://intone/… — paste a node's link to visit it">
+      <button type="submit">Go</button>
+    </form>
+    <span class="dim" id="status">starting…</span>
   </header>
 
   <!-- CupriFace paints the fetched site here. A canvas rather than a DOM subtree because the renderer draws HTML
@@ -58,7 +78,25 @@
       canvas.width = Math.round(canvas.clientWidth * dpr);
       canvas.height = Math.round(canvas.clientHeight * dpr);
 
-      globalThis.__cupri = { seed, canvas };
+      // The bridge into module scope. `pending` is a hand-off the module TAKES (imports.js clears it), so one
+      // submit produces exactly one visit however often the module polls.
+      const status = document.getElementById('status');
+      globalThis.__cupri = {
+        seed,
+        canvas,
+        pending: '',
+        status: (text) => { status.textContent = text; },
+      };
+
+      document.getElementById('go').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const field = document.getElementById('link');
+        const value = field.value.trim();
+        if (!value) return;
+        globalThis.__cupri.pending = value;
+        field.value = '';
+        status.textContent = 'navigating…';
+      });
       write('[cupri] seed received (' + seed.length + ' chars)');
 
       const runtime = await dotnet.withDiagnosticTracing(false).create();

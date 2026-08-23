@@ -136,7 +136,31 @@ its card and moniker, and `As of` advance — no reload, over the same Pilgrimag
 column with text spilling out. Grid with explicit tracks and spans works; the auto-fill/minmax track function does
 not. Flex wrap with a basis says the same thing and is fully supported.
 
+## The address bar
+
+Paste a node's intonation link and press Go: the current visit is torn down and the client dials the new node,
+pilgrimages, fetches and renders. Verified in a browser — the chrome status moved from one node's Signet to a
+second, independently-addressed one, and the page it rendered was that node's own site.
+
+**It takes a link, not a bare `cupri1…` address, and that is not a shortcut.** A Signet names a site but does not say
+where to reach it. In v1 "the site address travels *with its reachability*, carried in the link that delivered it"
+(CupriNet's `websites-l2.md`) — resolving a bare address to a moving host is L1 roaming, which does not exist yet.
+The field asks for what actually works rather than accepting input that could never resolve.
+
+Two details that are deliberate:
+
+- **The address bar is chrome, never site content.** A site paints into the canvas and nowhere else. One that could
+  write into the header could claim to be a node it is not — the address-bar spoofing problem imported wholesale.
+  The status line beside it is the client saying where you are, which is why it can be trusted when the page's own
+  panel agrees with it.
+- **Navigation interrupts a live feed.** The watcher runs alongside the feed rather than between its messages: an
+  idle feed can be silent indefinitely, and an address bar that only responded when data happened to arrive would
+  feel broken exactly when a node is quiet.
+
+A failed visit reports into the chrome and returns to the address bar rather than ending the session — a client that
+dies on a bad link is worse than one that says so.
+
 ## What remains
 
-Nothing is wired to a resize, so the canvas renders at its first size. And the client is still a single hard-coded
-visit — an address bar, and the roaming that goes with it, is the next real feature.
+Nothing is wired to a resize, so the canvas renders at its first size. Links are also the only way in: no history, no
+back, and no roaming to an address you do not already hold a link for.

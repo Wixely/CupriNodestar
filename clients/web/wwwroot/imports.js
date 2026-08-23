@@ -139,6 +139,29 @@ mergeInto(LibraryManager.library, {
     return c ? c.height : 0;
   },
 
+  // --- navigation ----------------------------------------------------------------------------------------------
+
+  // TAKE semantics, not peek: returns a pending link once and clears it, so one submit produces exactly one visit
+  // however often the managed side polls. Returns 0 when nothing is pending.
+  cupri_take_link__deps: ['$cupri'],
+  cupri_take_link: function (ptr, cap) {
+    const g = globalThis.__cupri;
+    const link = g && g.pending ? g.pending : '';
+    if (!link) return 0;
+    const bytes = lengthBytesUTF8(link) + 1;
+    if (bytes > cap) { g.pending = ''; return -1; }
+    stringToUTF8(link, ptr, cap);
+    g.pending = '';
+    return bytes - 1;
+  },
+
+  // Chrome status, written by the client rather than by any site — see index.html for why that separation matters.
+  cupri_status__deps: ['$cupri'],
+  cupri_status: function (ptr) {
+    const g = globalThis.__cupri;
+    if (g && g.status) g.status(UTF8ToString(ptr));
+  },
+
   cupri_send__deps: ['$cupri'],
   cupri_send: function (ptr, len) {
     if (!cupri.channel || cupri.channel.readyState !== 'open') return -1;
