@@ -59,3 +59,4 @@ probe/*/obj/
 # Staged client bundle (regenerate with the "client: stage into the CupriFace client package" task)
 src/CupriNet.Nodestar.Client.CupriFace/client/*
 !src/CupriNet.Nodestar.Client.CupriFace/client/.gitkeep
+boundary-packages/

@@ -509,9 +509,12 @@ recipe to put it online.**
 - **The web client is C# compiled to WASM.** A `clients/web/` project targeting NativeAOT-LLVM (no Mono
   fallback), with a small JS shim, shipped as an embedded resource in `CupriNet.Nodestar.WebRtc`. It references the
   CupriNet client stack **and CupriFace** from the feed — no protocol code and no renderer of its own.
-- **The CupriFace boundary is a build gate, on the server side.** CI builds **`CupriNet.Nodestar`** (base) with the
-  CupriFace feed package **unavailable**, so a UI-runtime dependency leaking into the node/host/SSR path is a build
-  failure rather than a convention. `.WebRtc` and the client are exempt by design — that is where the renderer lives.
+- **The CupriFace boundary is enforced twice, and the boundary is wider than first planned.** No server-side project
+  references CupriFace at all — not the base package, not the transport, not the reference host, and *not even*
+  `CupriNet.Nodestar.Client.CupriFace`, because the renderer is compiled into the embedded wasm bundle rather than
+  restored. `PackagingBoundaryTests` checks the project files on every test run; the `cupriface-boundary` CI job
+  restores the server-side projects into an isolated package directory and fails if a renderer lands there, which
+  catches a transitive arrival a project-file scan would miss.
 - **Solutions:** `Nodestar.sln` (packages + host + client + template) and `samples/Samples.sln`.
 - **Consumes from the Wixely feed**: CupriNet core **0.3.2+** (Shrine/Oracle/Signet/Auspice), CupriNet.WebRtc, and
   **CupriFace 0.2.10+** (client-side only).

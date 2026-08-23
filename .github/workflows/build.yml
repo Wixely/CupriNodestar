@@ -1,0 +1,92 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The product: both solutions, both test suites. Two solutions exist so a sample can take a dependency the product
+  # must not, and the consequence is that building one proves nothing about the other — so this builds both.
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Authenticate the Wixely feed
+        shell: bash
+        run: |
+          dotnet nuget update source GitHub-Wixely-Packages \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}" \
+            --store-password-in-clear-text
+
+      - name: Build the product
+        run: dotnet build Nodestar.slnx -c Release
+
+      - name: Test the product
+        run: dotnet test Nodestar.slnx -c Release --no-build
+
+      # The samples are a separate solution and therefore a separate build. The redaction tests live here — the ones
+      # guarding what a public feed may disclose — so skipping them would mean a green run over the checks that
+      # matter most.
+      - name: Build the samples
+        run: dotnet build samples/Samples.slnx -c Release
+
+      - name: Test the samples
+        run: dotnet test samples/Samples.slnx -c Release --no-build
+
+  # The CupriFace boundary, enforced rather than asserted.
+  #
+  # PackagingBoundaryTests already checks that no project under src/ or node/ REFERENCES CupriFace. This is the
+  # stronger version: build the server-side packages with the feed that carries CupriFace switched off entirely, so
+  # a dependency that crept in transitively — via a package rather than a project file — cannot restore either.
+  #
+  # A node serving its site over Tor or a Cloudflare tunnel carries no UI runtime. That is a claim the README makes;
+  # this is what makes it true.
+  cupriface-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Authenticate the Wixely feed
+        shell: bash
+        run: |
+          # CupriFace lives on the same feed as CupriNet.*, so the feed cannot simply be removed. The check is done
+          # by restoring into an ISOLATED package directory and inspecting what actually landed in it.
+          dotnet nuget update source GitHub-Wixely-Packages \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}" \
+            --store-password-in-clear-text
+
+      - name: Restore the server-side projects in isolation
+        run: |
+          dotnet restore src/CupriNet.Nodestar/CupriNet.Nodestar.csproj --packages boundary-packages
+          dotnet restore src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj --packages boundary-packages
+          dotnet restore node/cuprinet-nodestar/cuprinet-nodestar.csproj --packages boundary-packages
+
+      - name: Assert no UI runtime was restored
+        shell: bash
+        run: |
+          if ls boundary-packages | grep -i '^cupriface'; then
+            echo "::error::CupriFace was restored while building the node, transport and reference host."
+            echo "Those must carry no UI runtime: a site served over Tor or a Cloudflare tunnel ships no renderer."
+            echo "See design/nodestar.md — 'CupriFace is a preference of this project, not a requirement'."
+            exit 1
+          fi
+          echo "server-side restore is CupriFace-free ($(ls boundary-packages | wc -l) packages, none of them a renderer)"
+
+      - name: Build them from that graph alone
+        run: |
+          dotnet build src/CupriNet.Nodestar/CupriNet.Nodestar.csproj -c Release --no-restore
+          dotnet build src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj -c Release --no-restore
+          dotnet build node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release --no-restore
