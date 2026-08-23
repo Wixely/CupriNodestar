@@ -157,11 +157,10 @@ public sealed class NodestarApplication : IAsyncDisposable
             _node = null;
         }
 
-        if (_webRtc is not null)
-        {
-            await _webRtc.DisposeAsync().ConfigureAwait(false);
-            _webRtc = null;
-        }
+        // NOT disposed here: handing the transport to CupriNodeOptions transfers ownership, and CupriNode disposes it
+        // (DisposeWebRtcAsync). Disposing it again throws ObjectDisposedException out of DisposeAsync — which any
+        // host would hit on a clean shutdown, and which surfaced first as a test-cleanup failure.
+        _webRtc = null;
     }
 
     /// <summary>

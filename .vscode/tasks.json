@@ -99,6 +99,21 @@
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
+      // Mode 1 in a real browser. Depends on the staging chain: the client bundle is EMBEDDED at build time, so
+      // staging alone is not enough — copying new files and then running --no-build tests the previous bundle, which
+      // is a genuinely confusing way to lose an afternoon.
+      //
+      // Set CUPRI_CHROMIUM to an existing chromium to skip Playwright's own download.
+      "label": "test: browser (Mode 1 end to end)",
+      "type": "shell",
+      "dependsOrder": "sequence",
+      "dependsOn": ["client: stage into the CupriFace client package"],
+      "command": "dotnet test tests/CupriNet.Nodestar.BrowserTests/CupriNet.Nodestar.BrowserTests.csproj -c Release",
+      "problemMatcher": "$msCompile",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       // The default test task (Ctrl+Shift+P → "Run Test Task", or Ctrl+; A). Runs BOTH solutions, because running
       // only one silently reports green while half the repo is untested — and which half depends on which solution
       // the IDE happened to load.

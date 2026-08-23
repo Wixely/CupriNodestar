@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The browser gate: the one test that exercises Mode 1 end to end — dial, Pilgrimage, Oracle fetch, render, live
+    Auspice update — in a real Chromium against a real node.
+
+    It exists because every failure mode in that chain is SILENT. A stripped export, a trimmed-away reflection path,
+    a missing font, an unset background: none of them throw. They produce a page that loads and shows nothing, which
+    is indistinguishable from success in any test that stops at "did it compile".
+
+    Deliberately NOT in Nodestar.slnx. It needs a published wasm client staged into the client package and a browser
+    on the machine, so it must not be able to fail an ordinary `dotnet test`. CI runs it as its own job; locally it is
+    the "test: browser" task.
+  -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>CupriNet.Nodestar.BrowserTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.WebRtc\CupriNet.Nodestar.WebRtc.csproj" />
+    <!-- The client under test. A test may reference it; the boundary rule is about src/ and node/. -->
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.Client.CupriFace\CupriNet.Nodestar.Client.CupriFace.csproj" />
+  </ItemGroup>
+
+</Project>
