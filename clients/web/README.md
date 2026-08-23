@@ -60,36 +60,41 @@ entire reason to compile to wasm rather than reimplement the protocol in JavaScr
 - **A `<base>` tag is injected at serve time** so the bundle works whether it is reached at `/app` or `/app/`. A
   redirect cannot do this job: ASP.NET treats the two as one route and redirects to itself forever.
 
-## Verified in a real browser (headless Chromium, driven by Playwright)
+## Verified end to end, in a real browser
 
-- A NativeAOT-LLVM wasm module runs in the browser at all — the `WasmCrypto` probe prints `PROBE OK` with Ed25519,
-  HKDF, ChaCha20-Poly1305 and X25519 all exercised. Previously this was only known under Node.
-- The client bundle loads, `main` runs, and **`DllImport("js")` resolves in both directions**: `cupri_seed` returns
-  the link the page fetched, and `cupri_connect` creates a real `RTCPeerConnection` and `RTCDataChannel`.
-- The node serves every asset correctly, `application/wasm` included, and the seeded Intonation reaches the module.
+The complete Mode-1 chain runs in headless Chromium against a live node:
 
-The client currently gets as far as **dialling** and then stops. It does not crash.
+```
+[cupri] seed received (404 chars)          ← the only clearnet HTTP
+[cupri] dialling constellation-demo …
+[cupri] datachannel open                   ← ICE-lite → DTLS 1.3 → SCTP → DCEP, no signalling server
+[cupri] pilgrimage complete — the Signet answered
+[cupri] site answered 200 (4014 bytes, text/html)   ← the site, over L2
+[cupri] feed Snapshot (275 bytes)          ← Auspice: snapshot on attend…
+[cupri] feed Update  (…)                   ← …updates only when the overlay actually changes
+```
 
-## The blocker, and why it is not a bug in this code
+No WebSockets, no SSE, no polling. The page is clearnet; everything after it rides the DataChannel.
 
-**NativeAOT-LLVM wasm has no event-loop integration**: no synchronization context, and no timer thread behind
-`Task.Delay`. An `await` on the browser's only thread does not yield — it blocks the loop that would complete it.
+## Three findings that cost real time, so they are recorded
 
-That was measured, not guessed. With a real seed the renderer process *crashed* immediately after
-`createDataChannel`, which is precisely where managed code returned into an awaiting loop. Restructuring so `Main`
-fires and returns rather than awaiting **fixed the crash** — the evidence for the diagnosis.
+- **`DotNetJsApi=true` is load-bearing, not optional.** It flips `IlcExportUnmanagedEntrypoints` (so
+  `[UnmanagedCallersOnly]` exports reach the wasm export table as `Module._name`), and its dotnet.js loader ships the
+  event-loop glue the runtime's scheduler dispatches through. The standalone build crashed the renderer the moment
+  managed code awaited — no synchronization context, no timer thread — and `-sASYNCIFY` does not build (Binaryen hits
+  `UNREACHABLE`). Every by-hand `-sEXPORTED_FUNCTIONS` variant broke the module's indirect-call table before `main`.
+  CupriFace's WebLlvm host uses exactly this recipe and CI-gates it; diverging from it was the mistake.
+- **`Main` fires and returns; `BrowserLoop` pumps.** Awaiting in `Main` blocks the browser's only thread. The page's
+  `requestAnimationFrame` loop calls `Module._cupri_tick`, which drains queued continuations — only what was queued
+  at entry, so a continuation that queues more work cannot starve the frame.
+- **A browser Pilgrim must not construct a `CupriNode`.** The node binds sockets;
+  `PlatformNotSupportedException: System.Net.Sockets`, measured. `BrowserPilgrim` is a faithful transcription of
+  `CupriNode.PilgrimageOverVesselAsync` over public upstream types (Toll → Noise pinning the Signet → the exact
+  `ShrineSession` mux wiring). **The right home for it is CupriNet** — a static, node-free Pilgrim entry, by
+  upstream's own "the Pilgrim half runs inside the client stack" reasoning; the one thing blocking plain reuse is
+  `ShrineSession`'s `internal` constructor. Until then this file must move in lockstep with `CupriNode.Shrine.cs`.
 
-Two consequences:
+## What remains
 
-- **`Task.Delay` is unusable here.** `BrowserLoop.NextFrameAsync` replaces it, resuming continuations from a pump.
-- **Emscripten's usual remedy is unavailable.** `-sASYNCIFY` does not build: Binaryen's Asyncify pass hits an
-  `UNREACHABLE` and `wasm-opt` fails outright.
-
-So the architecture is the one CupriFace independently arrived at: **JavaScript drives, managed code is pumped**.
-`BrowserLoop.Tick` is written and `requestAnimationFrame` calls it.
-
-**What remains is one build-configuration problem:** exporting `cupri_tick` to JavaScript. Emscripten dead-strips it
-without `-sEXPORTED_FUNCTIONS`, and *with* that flag the module's indirect-call table breaks (`RuntimeError: null
-function` before `main` runs) — adding `_malloc`/`_free` did not help. The likely next thing to try is
-`emscripten_set_main_loop` called *from* managed code, passing a function pointer, so the callback is rooted by having
-its address taken and no export list is involved.
+Rendering. The markup arrives and is counted, not yet painted — wiring CupriFace to the canvas is the next step, and
+the bundle will grow toward the probe's 4.5 MB gzipped when it lands. And the connection panel, which today is a log.

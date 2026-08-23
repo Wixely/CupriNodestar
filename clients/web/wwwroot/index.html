@@ -22,56 +22,52 @@
     <span class="dim">the page is clearnet; everything below arrives over WebRTC</span>
   </header>
 
-  <!-- CupriFace paints the fetched site here. It is a canvas rather than a DOM subtree because the renderer draws
-       HTML and CSS itself — no browser engine, and no JavaScript engine for a hostile site to reach for. -->
+  <!-- CupriFace paints the fetched site here. A canvas rather than a DOM subtree because the renderer draws HTML
+       and CSS itself — no browser engine, and no JavaScript engine for a hostile site to reach for. -->
   <canvas id="viewport"></canvas>
 
   <pre id="log"></pre>
 
-  <script>
-    // The module writes progress to stdout; surfacing it in the page means a failed handshake is visible without
-    // opening devtools, which matters because most of what can go wrong here is invisible otherwise.
+  <script type="module">
+    // Boot sequence modelled on CupriFace's WebLlvm host, which is CI-gated against real Chromium — the recipe is
+    // proven, so this page deliberately stays close to it.
+    import { dotnet } from './dotnet.js';
+
     const log = document.getElementById('log');
     const write = (line) => { log.textContent += line + '\n'; log.scrollTop = log.scrollHeight; };
+    window.addEventListener('error', (e) => write('[page-error] ' + (e.error && e.error.stack || e.message)));
+    window.addEventListener('unhandledrejection', (e) => write('[unhandled] ' + (e.reason && e.reason.stack || e.reason)));
 
-    const canvas = document.getElementById('viewport');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * dpr;
-    canvas.height = canvas.clientHeight * dpr;
+    // The module's stdout lands on console.*; mirroring it into the page makes a failed handshake visible without
+    // devtools, which matters because most of what can go wrong here is otherwise invisible.
+    for (const lvl of ['log', 'info', 'warn', 'error']) {
+      const orig = console[lvl].bind(console);
+      console[lvl] = (...a) => { try { write(a.map(String).join(' ')); } catch {} orig(...a); };
+    }
 
-    var Module = {
-      canvas: canvas,
-      print: write,
-      printErr: write,
-      onAbort: (why) => write('[cupri] aborted: ' + why),
+    try {
+      // The bridge into module scope. imports.js reads the seed from here — under the dotnet.js loader the page
+      // never owns the Module object, so a global is the seam, exactly as CupriFace's imports.js does it.
+      write('[cupri] fetching seed…');
+      const seedResponse = await fetch('intonation.json', { cache: 'no-store' });
+      const seed = (await seedResponse.json()).link;
+      globalThis.__cupri = { seed };
+      write('[cupri] seed received (' + seed.length + ' chars)');
 
-      // Nothing keeps the module alive once main() returns, and main returns immediately by design � the managed
-      // side is pumped from here rather than blocking the browser's only thread.
-      noExitRuntime: true,
+      const runtime = await dotnet.withDiagnosticTracing(false).create();
+      write('[cupri] runtime created');
 
-      onRuntimeInitialized: function () {
-        // The pump. Managed continuations are queued, not run inline, so the browser stays responsive between
-        // frames and the promise chains that complete the WebRTC handshake actually get to run.
-        const tick = Module._cupri_tick;
-        if (!tick) { write('[cupri] cupri_tick missing � the module cannot be driven'); return; }
-        write('[cupri] runtime up, pump started');
-        (function frame() { tick(); requestAnimationFrame(frame); })();
-      },
-    };
+      await runtime.runMain('CupriNet.Nodestar.Client', []);
+      write('[cupri] main returned — pumping');
 
-    // Fetch the node's signed link, then load the module. Order matters: the module reads the seed synchronously on
-    // startup, so it must already be here. This is the last HTTP request the page makes — everything after it is
-    // WebRTC.
-    fetch('intonation.json', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => {
-        Module.cupriSeed = d.link;
-        write('[cupri] seed received (' + d.link.length + ' chars)');
-        const s = document.createElement('script');
-        s.src = 'CupriNet.Nodestar.Client.js';
-        document.body.appendChild(s);
-      })
-      .catch((e) => write('[cupri] could not read the seed link: ' + e));
+      // The pump. Main fires its work and returns; managed continuations queue in BrowserLoop and this drains them
+      // once a frame, so nothing ever blocks the browser's only thread.
+      const tick = runtime.Module._cupri_tick;
+      if (!tick) { write('[cupri] cupri_tick missing — the module cannot be driven'); }
+      else (function frame() { tick(); requestAnimationFrame(frame); })();
+    } catch (err) {
+      write('[cupri] boot failed: ' + (err && err.stack || err));
+    }
   </script>
 </body>
 </html>

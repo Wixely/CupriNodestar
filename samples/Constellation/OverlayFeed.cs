@@ -43,7 +43,9 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
             // a real change keeps an idle node quiet — and a feed that ticks regardless of content is a feed whose
             // timing leaks nothing but also says nothing.
             var current = Project();
-            if (current.ToJsonString() == previous.ToJsonString()) continue;
+            // Compared WITHOUT generatedAt, which changes on every projection by definition: comparing the full
+            // payload made this always-unequal, and an idle node ticked every poll. Found live in a browser session.
+            if (Comparable(current) == Comparable(previous)) continue;
 
             await publisher.UpdateAsync(Encode(current), cancellationToken).ConfigureAwait(false);
             previous = current;
@@ -54,6 +56,14 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
     public byte[] SnapshotBytes() => Encode(Project());
 
     private static byte[] Encode(JsonNode payload) => Encoding.UTF8.GetBytes(payload.ToJsonString());
+
+    /// <summary>The projection minus its timestamp, for change detection only.</summary>
+    private static string Comparable(JsonNode payload)
+    {
+        var copy = JsonNode.Parse(payload.ToJsonString())!.AsObject();
+        copy.Remove("generatedAt");
+        return copy.ToJsonString();
+    }
 
     /// <summary>
     /// Projects the Constellation into something safe to hand an anonymous visitor.

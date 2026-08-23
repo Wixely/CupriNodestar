@@ -105,7 +105,9 @@ mergeInto(LibraryManager.library, {
   // Handing the page's own fetch result across is both simpler and one less thing to go wrong.
   cupri_seed__deps: ['$cupri'],
   cupri_seed: function (ptr, cap) {
-    const seed = (typeof Module !== 'undefined' && Module.cupriSeed) ? Module.cupriSeed : '';
+    // globalThis, not Module: under the dotnet.js loader the page never owns the Module object, so the bridge
+    // between page and module scope is a global — the same pattern CupriFace's imports.js uses.
+    const seed = (globalThis.__cupri && globalThis.__cupri.seed) ? globalThis.__cupri.seed : '';
     const bytes = lengthBytesUTF8(seed) + 1;
     if (bytes > cap) return -1;
     stringToUTF8(seed, ptr, cap);

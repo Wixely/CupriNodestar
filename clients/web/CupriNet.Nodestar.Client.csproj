@@ -23,7 +23,16 @@
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
 
-    <DotNetJsApi>false</DotNetJsApi>
+    <!-- ON, matching CupriFace's proven WebLlvm recipe — measured to matter three separate ways.
+         (1) It flips IlcExportUnmanagedEntrypoints, so [UnmanagedCallersOnly(EntryPoint=…)] exports (cupri_tick)
+         reach the wasm export table wrapped as Module._cupri_tick; every by-hand -sEXPORTED_FUNCTIONS variant broke
+         the module's indirect-call table before main (RuntimeError: null function), including the ILC-written file
+         on a standalone build, because the standalone glue lacks the runtime export set the module then loses.
+         (2) Its dotnet.js loader ships the event-loop glue (safeSetTimeout, runtimeKeepalive*) the runtime's
+         scheduler dispatches through — the standalone build died the moment managed code awaited.
+         (3) It is the configuration CupriFace CI-gates against real Chromium; divergence from it is what cost days.
+         The trade: the module is no longer standalone-runnable under Node. -->
+    <DotNetJsApi>true</DotNetJsApi>
     <UsingBrowserRuntimeWorkload>false</UsingBrowserRuntimeWorkload>
     <WasmEnableLegacyJsInterop>false</WasmEnableLegacyJsInterop>
     <InvariantTimezone>true</InvariantTimezone>
