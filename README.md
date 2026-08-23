@@ -67,8 +67,14 @@ browser client that dials the node over WebRTC, completes a Pilgrimage, fetches 
 What it is not yet is *consumable*: nothing is published to a feed, there is no project template, and the container
 image has never been built. See **[TODO.md](TODO.md)** for the honest list.
 
+**Tor is wired but unproven.** `CupriNet.Nodestar.Tor` supplies an onion transport, `UseTor()` opts in, and setting
+`TorFacePort` publishes the HTTP front as a second onion so a browser can reach the site through the Mode-2 gateway —
+WebRTC is clearnet UDP and does not cross a Tor circuit, so onion delivery is snapshot delivery. None of it has ever
+opened a circuit: the development machine has no Tor access, so the tests are structural and the first real run is
+the first real test.
+
 The CupriNet capability underneath — Shrines (Signet, Pilgrimage, Oracle) plus the **Auspice** live-feed rite, all
-over WebRTC — is built and released in CupriNet **0.3.2**, so this is product work on a working protocol. See
+over WebRTC — is built and released in CupriNet **0.3.4**, so this is product work on a working protocol. See
 [`design/nodestar.md`](design/nodestar.md) for the full design.
 
 ## License

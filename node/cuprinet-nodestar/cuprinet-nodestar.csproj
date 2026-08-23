@@ -15,6 +15,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+    <!-- The onion face, so EnableTor/TorOnly in appsettings.json are settings rather than decoration. Referenced
+         always, invoked only when configured: the embedded Tor client costs disk in the image, but a turnkey host
+         whose advertised flags do nothing costs more. -->
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.Tor\CupriNet.Nodestar.Tor.csproj" />
   </ItemGroup>
 
   <ItemGroup>

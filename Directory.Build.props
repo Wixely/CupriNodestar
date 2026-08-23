@@ -10,13 +10,20 @@
   </PropertyGroup>
 
   <!--
-    The CupriNet version this product is built against. 0.3.2 is the FLOOR, not a preference: 0.3.2 added a version
-    byte to the Oracle frame (a deliberate wire break against 0.3.0), and it is the release that carries the Auspice
-    live-feed rite. The v0.3.1 tag published nothing — its CI failed on a test race — so 0.3.1 does not exist on the
-    feed. Keep these together so a bump is one edit.
+    The CupriNet version this product is built against, and a FLOOR rather than a preference — each bump here is
+    something this repository needs rather than routine currency:
+
+      0.3.2  the Auspice live-feed rite, and a version byte on the Oracle frame (a deliberate wire break against
+             0.3.0). The v0.3.1 tag published nothing — its CI failed on a test race — so it does not exist.
+      0.3.3  the socket-free CupriNet.Shrine package: a static Pilgrimage.OverVesselAsync, which is what lets a
+             browser be a Pilgrim without constructing a node that binds sockets.
+      0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
+             (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+
+    Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.3.3</CupriNetVersion>
+    <CupriNetVersion>0.3.4</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
     <CupriFaceVersion>0.2.11</CupriFaceVersion>
   </PropertyGroup>

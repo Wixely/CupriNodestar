@@ -33,8 +33,12 @@ internal sealed class NodestarWebFront(
         builder.WebHost.ConfigureKestrel(k =>
         {
             k.ListenAnyIP(options.WebPort);
+
+            // LOOPBACK, deliberately. The onion service forwards inbound streams to 127.0.0.1, so binding the Tor
+            // face on every interface would add nothing except a second door on the clearnet IP — one serving the
+            // onion-only face to anyone who portscans the very address the onion exists to keep separate.
             if (options.TorFacePort is int torPort && torPort != options.WebPort)
-                k.ListenAnyIP(torPort);
+                k.ListenLocalhost(torPort);
             // Nothing here identifies the server: an onion that leaks "Kestrel" in a header is still a fingerprint.
             k.AddServerHeader = false;
         });

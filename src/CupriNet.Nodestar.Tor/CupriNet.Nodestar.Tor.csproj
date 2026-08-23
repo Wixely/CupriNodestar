@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tor — the onion face. ONE job: give the node an onion transport, and optionally publish its HTTP front as a
+    second onion service.
+
+    Separate from the base package for the same reason the WebRTC transport is: CupriNet.Tor drags in an embedded
+    Tor client, and a node that serves over clearnet or a Cloudflare tunnel should not carry one. IOnionTransport is
+    a CupriNet.Hosting interface, so the base package can hold the seam without ever referencing this.
+
+    NOTE the pairing with Mode 2. WebRTC is clearnet UDP and cannot survive a Tor circuit, so a browser reaches an
+    onion Nodestar through the HTTP gateway (server-side rendering) and not through the on-ramp. Onion delivery is
+    therefore snapshot delivery — the live Auspice feed is a Mode-1 capability, and this is why.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>CupriNet.Nodestar.Tor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The concrete onion transport: an in-process Tor client (CupriTor), onion-only, with guard and vanguard
+         state persisted through the node's own encrypted secret store. Published from 0.3.4 onward — before that
+         this package could not exist, which is what CupriNet#2 was about. -->
+    <PackageReference Include="CupriNet.Tor" Version="$(CupriNetVersion)" />
+  </ItemGroup>
+
+</Project>

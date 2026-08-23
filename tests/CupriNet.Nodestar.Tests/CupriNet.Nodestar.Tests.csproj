@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.Tor\CupriNet.Nodestar.Tor.csproj" />
   </ItemGroup>
 
 </Project>

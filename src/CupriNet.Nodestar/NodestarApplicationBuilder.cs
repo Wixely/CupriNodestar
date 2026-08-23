@@ -1,3 +1,4 @@
+using CupriNet.Abstractions;
 using CupriNet.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -68,15 +69,35 @@ public sealed class NodestarApplicationBuilder
     /// Supplies the optional onion transport. Like <see cref="ConfigureTransport"/>, the seam lives here so the base
     /// package never references a Tor stack: <c>IOnionTransport</c> is a CupriNet.Hosting interface, and only
     /// <c>CupriNet.Nodestar.Tor</c> supplies an implementation.
+    ///
+    /// <para>The factory is handed the node's <see cref="ISecretStore"/> because an onion service key belongs in it.
+    /// That is not incidental: the key <i>is</i> the <c>.onion</c> address, so a transport that generated a fresh one
+    /// each start would hand out a new address on every restart — the same trap as losing the Signet, and just as
+    /// silent.</para>
     /// </summary>
     public NodestarApplicationBuilder ConfigureOnionTransport(
-        Func<NodestarOptions, Action<string>, Task<IOnionTransport?>> factory)
+        Func<NodestarOptions, ISecretStore, Action<string>, CancellationToken, Task<IOnionTransport?>> factory)
     {
         OnionTransportFactory = factory ?? throw new ArgumentNullException(nameof(factory));
         return this;
     }
 
-    internal Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? OnionTransportFactory { get; private set; }
+    internal Func<NodestarOptions, ISecretStore, Action<string>, CancellationToken, Task<IOnionTransport?>>?
+        OnionTransportFactory { get; private set; }
+
+    /// <summary>
+    /// Runs a callback once the node is up and its Shrine is hosted. It exists for work that cannot be done at
+    /// construction time because it needs a live transport — publishing an auxiliary onion service, for one: the
+    /// transport is built before the node starts, but Tor has not bootstrapped until afterwards.
+    /// </summary>
+    public NodestarApplicationBuilder OnStarted(Func<NodestarApplication, CancellationToken, Task> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        StartedCallbacks.Add(callback);
+        return this;
+    }
+
+    internal List<Func<NodestarApplication, CancellationToken, Task>> StartedCallbacks { get; } = [];
 
     /// <summary>
     /// Serves a browser client of your choosing: a lookup from relative path to file. Null means no client is
@@ -100,5 +121,5 @@ public sealed class NodestarApplicationBuilder
 
     /// <summary>Assembles the application. Nothing binds a port or touches the network until <c>RunAsync</c>.</summary>
     public NodestarApplication Build() =>
-        new(Node, Site, LoggerFactory, TransportFactory, OnionTransportFactory, ClientAssets);
+        new(Node, Site, LoggerFactory, TransportFactory, OnionTransportFactory, ClientAssets, StartedCallbacks);
 }

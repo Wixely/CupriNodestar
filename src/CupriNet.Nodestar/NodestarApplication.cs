@@ -1,5 +1,6 @@
 using System.Net;
 using CupriNet.Alembic.BouncyCastle;
+using CupriNet.Abstractions;
 using CupriNet.Core;
 using CupriNet.Hosting;
 using CupriNet.Persistence;
@@ -17,8 +18,9 @@ public sealed class NodestarApplication : IAsyncDisposable
     private readonly SiteBuilder _site;
     private readonly ILogger _log;
     private readonly Func<NodestarOptions, Action<string>, IWebRtcTransport?>? _transportFactory;
-    private readonly Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? _onionFactory;
+    private readonly Func<NodestarOptions, ISecretStore, Action<string>, CancellationToken, Task<IOnionTransport?>>? _onionFactory;
     private readonly Func<string, ClientAsset?>? _clientAssets;
+    private readonly IReadOnlyList<Func<NodestarApplication, CancellationToken, Task>> _started;
     private CupriNode? _node;
     private IWebRtcTransport? _webRtc;
 
@@ -27,8 +29,9 @@ public sealed class NodestarApplication : IAsyncDisposable
         SiteBuilder site,
         ILoggerFactory loggerFactory,
         Func<NodestarOptions, Action<string>, IWebRtcTransport?>? transportFactory = null,
-        Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? onionFactory = null,
-        Func<string, ClientAsset?>? clientAssets = null)
+        Func<NodestarOptions, ISecretStore, Action<string>, CancellationToken, Task<IOnionTransport?>>? onionFactory = null,
+        Func<string, ClientAsset?>? clientAssets = null,
+        IReadOnlyList<Func<NodestarApplication, CancellationToken, Task>>? startedCallbacks = null)
     {
         _options = options;
         _site = site;
@@ -36,7 +39,11 @@ public sealed class NodestarApplication : IAsyncDisposable
         _transportFactory = transportFactory;
         _onionFactory = onionFactory;
         _clientAssets = clientAssets;
+        _started = startedCallbacks ?? [];
     }
+
+    /// <summary>The host's logger, so an <c>OnStarted</c> callback reports through the same sink as the host.</summary>
+    public ILogger Logger => _log;
 
     /// <summary>Creates a builder bound to <c>appsettings.json</c>, <c>CUPRINET_NODESTAR_*</c> and the command line.</summary>
     public static NodestarApplicationBuilder CreateBuilder(string[]? args = null) => new(args ?? []);
@@ -84,7 +91,7 @@ public sealed class NodestarApplication : IAsyncDisposable
                 ? "Tor (onion-only): building the onion transport — this takes a while."
                 : "Tor (dual-stack: clearnet + onion): building the onion transport — this takes a while.");
 
-            onion = await _onionFactory(_options, message => _log.LogInformation("Tor {Status}", message))
+            onion = await _onionFactory(_options, store, message => _log.LogInformation("Tor {Status}", message), cancellationToken)
                 .ConfigureAwait(false);
 
             if (onion is null)
@@ -145,6 +152,12 @@ public sealed class NodestarApplication : IAsyncDisposable
             _log.LogInformation("Live feeds: {Feeds}", string.Join(", ", _site.Feeds.Keys));
         if (_options.AdvertiseSiteInLink)
             _log.LogInformation("The site's Signet is stamped into this node's link — it is therefore linkable to the node's overlay identity.");
+
+        // Post-start work that needed a live transport. A failure here is fatal on purpose: the only caller today is
+        // the Tor package publishing the face onion, and a node that came up without the .onion an operator asked for
+        // — while logging a healthy startup — is the silent-clearnet failure again, wearing a different hat.
+        foreach (var callback in _started)
+            await callback(this, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Starts, then runs until the process is asked to stop (Ctrl+C / SIGTERM) or the token is cancelled.</summary>

@@ -11,7 +11,7 @@ system, while this one is honest about what a clone actually gets today.
       `CUPRINET_NODESTAR_DataDirectory` / `SiteRoot` environment variables all work. **Unverified: the Docker layers
       themselves** — base images, the BuildKit secret mount, the non-root user, the volume.
 - [ ] **Build the image once** and correct whatever the above missed.
-- [ ] **`docker-compose`** — clearnet and, once Tor is wired, onion.
+- [ ] **`docker-compose`** — clearnet and onion. The onion variant is now buildable (Tor is wired); it has never run.
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
 - [ ] **A Mode-1 image.** Needs the wasm bundle, which is a build output a fresh clone does not have. The intended
       answer is restoring `CupriNet.Nodestar.Client.CupriFace` from the feed rather than carrying the Emscripten
@@ -27,21 +27,33 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Not wired up
 
-- [~] **Tor.** The seam is wired: `ConfigureOnionTransport` mirrors the WebRTC one, `IOnionTransport` comes from
-      `CupriNet.Hosting` so the base package stays Tor-free, and a supplied transport reaches
-      `CupriNodeOptions.OnionTransport`. Requesting Tor without one is now **refused at startup** rather than
-      silently serving clearnet — an anonymity setting that quietly does not apply is the one failure mode it must
-      never have.
+- [~] **Tor — wired, never dialled.** `CupriNet.Nodestar.Tor` supplies the transport and `UseTor()` wires it into
+      `ConfigureOnionTransport`; the reference host calls it when `EnableTor`/`TorOnly` ask, so those settings are no
+      longer decoration. Two onions come out of it: the **overlay onion** (how another *node* reaches this Shrine over
+      Tor) and, when `TorFacePort` is set, the **face onion** forwarding to the HTTP front (how a *browser* reaches it,
+      necessarily through the Mode-2 gateway). `TorWiringTests` covers the opt-in, the configuration opt-out and the
+      startup refusal.
 
-      **Blocked on [CupriNet#2](https://github.com/Wixely/CupriNet/issues/2):** `CupriNet.Tor` is not published (its
-      CI skips packing it), so there is no concrete `IOnionTransport` to reference. When it lands, the
-      `CupriNet.Nodestar.Tor` package and `UseTor()` are about twenty lines. Writing our own binding over `CupriTor`
-      instead would be the transcription mistake that #1 just removed.
+      **What is unverified is the network itself.** This machine has no Tor access, so nothing here has published an
+      onion or opened a circuit — every test is structural by necessity. The first real run is the first real test.
+      Specifically unproven: that Tor bootstraps inside the container, that `PublishAuxiliaryOnionAsync` returns a
+      reachable address, and that a browser can load the gateway through it.
 
-      **Untestable here regardless:** this machine has no Tor network access, so even with the package the onion
-      path could not be exercised locally.
-- [ ] **Reliquary → the Shrine path.** Gates the hosted-app tier: an Oracle response is one message and a WASM app
-      blob is far past the 256 KiB ceiling, so there is no way to deliver one without it.
+      Also unproven and worth watching: an onion-only node must never offer WebRTC (it would publish the clearnet IP
+      the onion exists to hide). The code skips it, but no test observes an onion-only node's advertised beacons.
+- [x] **Reliquary → the Shrine path.** Landed upstream in CupriNet 0.3.4 as the **Relic rite** — the Reliquary over
+      the Pilgrimage on stream 8, chunk-by-chunk under the same 192 KiB frame ceiling, every chunk verified against
+      the manifest and the whole file before any bytes are returned. Nothing in this repository uses it yet; see
+      "Hosted apps" below for what it now makes possible.
+- [ ] **Hosted apps (the Relic tier).** Now unblocked. A Shrine could name relics through `IRelicSource` and a client
+      could `FetchRelicAsync` a WASM blob, verify it against the manifest, and only then run it — which is the whole
+      point: integrity is proven *before* execution, so a hostile host can fail a fetch but cannot corrupt one. The
+      pieces exist upstream and nothing here calls them yet. `SiteBuilder` would need a `ServeRelics(...)` alongside
+      `ServeStaticFiles`, and the browser client a way to be told which relic to run.
+- [ ] **The 192 KiB page ceiling is undocumented for site authors.** As of 0.3.4 `StaticFileOracleHandler` refuses an
+      over-ceiling file at the rite, with a message naming the Relic rite, instead of failing later at the transport.
+      That is a much better failure — but nothing in this repository's docs tells someone dropping a large image into
+      `l2-wwwroot` that a ceiling exists at all, so they meet it as a surprise rather than a constraint.
 
 ## Client
 

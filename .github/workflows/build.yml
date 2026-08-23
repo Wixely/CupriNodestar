@@ -203,6 +203,7 @@ jobs:
         run: |
           dotnet restore src/CupriNet.Nodestar/CupriNet.Nodestar.csproj --packages boundary-packages
           dotnet restore src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj --packages boundary-packages
+          dotnet restore src/CupriNet.Nodestar.Tor/CupriNet.Nodestar.Tor.csproj --packages boundary-packages
           dotnet restore node/cuprinet-nodestar/cuprinet-nodestar.csproj --packages boundary-packages
 
       - name: Assert no UI runtime was restored
@@ -220,6 +221,7 @@ jobs:
         run: |
           dotnet build src/CupriNet.Nodestar/CupriNet.Nodestar.csproj -c Release --no-restore
           dotnet build src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj -c Release --no-restore
+          dotnet build src/CupriNet.Nodestar.Tor/CupriNet.Nodestar.Tor.csproj -c Release --no-restore
           dotnet build node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release --no-restore
 
   # A prerelease GitHub Release on a v* tag, carrying the runnable examples and the packages.
