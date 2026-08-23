@@ -1,0 +1,126 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The one to press. Builds the client, stages it, builds the server, runs it, and opens the browser once the
+      // web front is actually listening — rather than racing it.
+      "name": "Constellation + client (Mode 1)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: server + client",
+      "program": "${workspaceFolder}/samples/Constellation/bin/Debug/net10.0/Constellation.dll",
+      "args": [
+        "--WebPort", "8080",
+        "--ListenPort", "47654",
+        "--Moniker", "alpha",
+        "--DataDirectory", "${workspaceFolder}/.run/alpha",
+        "--EnablePortMapping", "false",
+        "--EnableLanDiscovery", "false",
+        // Mode 1 needs the site's Signet in the link: a Pilgrim pins it, and without it the client has a connection
+        // but nothing to ask for. Off by default because it ties the site to the node's overlay identity — fine for
+        // a local demo, a real decision for a real deployment.
+        "--AdvertiseSiteInLink", "true"
+      ],
+      "cwd": "${workspaceFolder}/samples/Constellation",
+      "console": "integratedTerminal",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Web front listening on http://[^:]+:([0-9]+)",
+        "uriFormat": "http://localhost:%s/_nodestar/app/"
+      }
+    },
+    {
+      // Mode 2 only: no client, no WebRTC needed. This is the configuration that works in every deployment row.
+      "name": "Constellation (Mode 2 — gateway only)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: server",
+      "program": "${workspaceFolder}/samples/Constellation/bin/Debug/net10.0/Constellation.dll",
+      "args": [
+        "--WebPort", "8080",
+        "--ListenPort", "47654",
+        "--Moniker", "alpha",
+        "--DataDirectory", "${workspaceFolder}/.run/alpha",
+        "--EnablePortMapping", "false",
+        "--EnableLanDiscovery", "false"
+      ],
+      "cwd": "${workspaceFolder}/samples/Constellation",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Web front listening on http://[^:]+:([0-9]+)",
+        "uriFormat": "http://localhost:%s/"
+      }
+    },
+    {
+      // The second node, for the demo that actually shows something: two of these find each other and each appears
+      // in the other's graph. Seed it with alpha's link from http://localhost:8080/_nodestar/link.json.
+      "name": "Constellation: beta (second node)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: server",
+      "program": "${workspaceFolder}/samples/Constellation/bin/Debug/net10.0/Constellation.dll",
+      "args": [
+        "--WebPort", "8081",
+        "--ListenPort", "47655",
+        "--Moniker", "beta",
+        "--DataDirectory", "${workspaceFolder}/.run/beta",
+        "--EnablePortMapping", "false",
+        "--EnableLanDiscovery", "false",
+        "--SeedLinks:0", "${input:seedLink}"
+      ],
+      "cwd": "${workspaceFolder}/samples/Constellation",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Web front listening on http://[^:]+:([0-9]+)",
+        "uriFormat": "http://localhost:%s/"
+      }
+    },
+    {
+      // Debug the samples tests — breakpoints in OverlayFeed and its redaction tests. VSTEST_HOST_DEBUG makes the
+      // test host wait for a debugger and print its PID; attach to it from the terminal output.
+      //
+      // Needed because these tests live in samples/Samples.slnx: a Test Explorer that loaded Nodestar.slnx cannot
+      // see them, so its usual right-click-debug is not available here.
+      "name": "Debug samples tests (attach)",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "dotnet",
+      "args": ["test", "${workspaceFolder}/samples/Samples.slnx", "-c", "Debug"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": { "VSTEST_HOST_DEBUG": "1" },
+      "requireExactSource": false
+    },
+    {
+      "name": "Debug product tests (attach)",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "dotnet",
+      "args": ["test", "${workspaceFolder}/Nodestar.slnx", "-c", "Debug"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": { "VSTEST_HOST_DEBUG": "1" },
+      "requireExactSource": false
+    }
+  ],
+  "compounds": [
+    {
+      // Both nodes at once. Beta still needs alpha's link pasted in, because a link is minted at runtime and there
+      // is nothing sensible to hard-code.
+      "name": "Two nodes (alpha + beta)",
+      "configurations": ["Constellation (Mode 2 — gateway only)", "Constellation: beta (second node)"],
+      "stopAll": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "seedLink",
+      "type": "promptString",
+      "description": "alpha's link — copy it from http://localhost:8080/_nodestar/link.json",
+      "default": "cuprinet://intone/"
+    }
+  ]
+}

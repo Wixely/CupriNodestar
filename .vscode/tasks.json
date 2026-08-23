@@ -1,0 +1,76 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Publishes the browser client and copies it where the WebRtc package embeds it from. This is the step that
+      // makes "run the server" also mean "serve the current client" — without it the host embeds whatever was there
+      // last time, which is a confusing way to debug a client change that appears to have no effect.
+      "label": "client: publish",
+      "type": "shell",
+      "command": "dotnet publish clients/web/CupriNet.Nodestar.Client.csproj -c Release",
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
+    },
+    {
+      "label": "client: stage into WebRtc package",
+      "type": "shell",
+      "dependsOn": "client: publish",
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile", "-Command",
+          "New-Item -ItemType Directory -Force src/CupriNet.Nodestar.WebRtc/client | Out-Null; Copy-Item -Force clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.WebRtc/client/"
+        ]
+      },
+      "linux": {
+        "command": "mkdir -p src/CupriNet.Nodestar.WebRtc/client && cp -f clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.WebRtc/client/"
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
+    },
+    {
+      "label": "build: server",
+      "type": "shell",
+      "command": "dotnet build samples/Samples.slnx -c Debug",
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      // The full chain a Mode-1 run needs: client published, staged, then the server built against it.
+      "label": "build: server + client",
+      "dependsOrder": "sequence",
+      "dependsOn": ["client: stage into WebRtc package", "build: server"],
+      "problemMatcher": []
+    },
+
+    {
+      // The product suite: SiteBuilder and the Mode-2 gateway's snapshot path.
+      "label": "test: product",
+      "type": "shell",
+      "command": "dotnet test Nodestar.slnx -c Release",
+      "problemMatcher": "$msCompile",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      // The samples suite — this is where OverlayFeed's redaction tests live. It is a SEPARATE solution, so it is
+      // invisible to a Test Explorer that loaded Nodestar.slnx; running it needs its own task.
+      "label": "test: samples",
+      "type": "shell",
+      "command": "dotnet test samples/Samples.slnx -c Release",
+      "problemMatcher": "$msCompile",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      // The default test task (Ctrl+Shift+P → "Run Test Task", or Ctrl+; A). Runs BOTH solutions, because running
+      // only one silently reports green while half the repo is untested — and which half depends on which solution
+      // the IDE happened to load.
+      "label": "test: all",
+      "dependsOrder": "sequence",
+      "dependsOn": ["test: product", "test: samples"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

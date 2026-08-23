@@ -19,7 +19,12 @@ wwwroot/_framework/
 .idea/
 *.user
 *.suo
-.vscode/
+# VS Code: ignore per-machine state, but SHARE the run/build/test configuration. Those are project deliverables —
+# "press Run to see Mode 1" and "Run Test Task covers both solutions" are useless if they live on one laptop.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 
 # NuGet
 *.nupkg
