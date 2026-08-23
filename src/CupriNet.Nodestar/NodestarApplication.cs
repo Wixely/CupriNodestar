@@ -17,6 +17,7 @@ public sealed class NodestarApplication : IAsyncDisposable
     private readonly SiteBuilder _site;
     private readonly ILogger _log;
     private readonly Func<NodestarOptions, Action<string>, IWebRtcTransport?>? _transportFactory;
+    private readonly Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? _onionFactory;
     private readonly Func<string, ClientAsset?>? _clientAssets;
     private CupriNode? _node;
     private IWebRtcTransport? _webRtc;
@@ -26,12 +27,14 @@ public sealed class NodestarApplication : IAsyncDisposable
         SiteBuilder site,
         ILoggerFactory loggerFactory,
         Func<NodestarOptions, Action<string>, IWebRtcTransport?>? transportFactory = null,
+        Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? onionFactory = null,
         Func<string, ClientAsset?>? clientAssets = null)
     {
         _options = options;
         _site = site;
         _log = loggerFactory.CreateLogger("Nodestar");
         _transportFactory = transportFactory;
+        _onionFactory = onionFactory;
         _clientAssets = clientAssets;
     }
 
@@ -63,9 +66,39 @@ public sealed class NodestarApplication : IAsyncDisposable
         var store = new FileSecretStore(Path.Combine(dataDir, "secrets"), new AeadDataProtector(suite, masterKey));
 
         var onionOnly = _options.TorOnly;
+        var torRequested = _options.EnableTor || onionOnly;
+
+        // The onion transport, when the Tor package supplied one. Bootstrapping Tor is slow — minutes on a cold
+        // start — so its progress is logged rather than swallowed.
+        IOnionTransport? onion = null;
+        if (torRequested)
+        {
+            if (_onionFactory is null)
+                throw new InvalidOperationException(
+                    "Tor was requested (EnableTor or TorOnly) but no onion transport is configured. Add the "
+                    + "CupriNet.Nodestar.Tor package and call builder.UseTor(). Starting without it would serve this "
+                    + "site over clearnet only, while the configuration says otherwise — which is the one failure "
+                    + "mode an anonymity setting must never have.");
+
+            _log.LogInformation(onionOnly
+                ? "Tor (onion-only): building the onion transport — this takes a while."
+                : "Tor (dual-stack: clearnet + onion): building the onion transport — this takes a while.");
+
+            onion = await _onionFactory(_options, message => _log.LogInformation("Tor {Status}", message))
+                .ConfigureAwait(false);
+
+            if (onion is null)
+                throw new InvalidOperationException(
+                    "The onion transport could not be created, and Tor was requested. Refusing to start: a node that "
+                    + "silently falls back to clearnet is worse than one that does not start.");
+        }
 
         // The browser on-ramp, when the WebRtc package supplied one. Its ICE credentials and DTLS fingerprint are
         // stamped into every Intonation this node mints, which is what lets a browser dial back with no signalling.
+        //
+        // Skipped entirely in onion-only mode, and that is not an optimisation: WebRTC is a clearnet UDP transport,
+        // so offering it would publish the very IP the onion exists to hide and drag a visitor off their own Tor
+        // path. The two are mutually exclusive by nature, not by policy.
         _webRtc = _transportFactory?.Invoke(_options, message => _log.LogInformation("{Message}", message));
 
         _node = await CupriNode.CreateAsync(new CupriNodeOptions
@@ -77,6 +110,8 @@ public sealed class NodestarApplication : IAsyncDisposable
             SecretStore = store,
             Moniker = _options.Moniker,
             WebRtcTransport = _webRtc,
+            OnionTransport = onion,
+            // Standard + an OnionTransport is dual-stack (clearnet AND onion); TorOnly enforces onion-only.
             Mode = onionOnly ? ReachabilityMode.TorOnly : ReachabilityMode.Standard,
 
             // Lodestar-grade defaults: a Nodestar is expected to be reachable and to stay warm, because it is

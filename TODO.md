@@ -27,9 +27,19 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Not wired up
 
-- [ ] **Tor.** `EnableTor` and `TorOnly` are honoured by `NodestarOptions` and change the node's `ReachabilityMode`,
-      but no onion transport is ever constructed. `TorOnly` today produces a node that advertises no beacons at all
-      rather than an onion one — worse than the flag not existing.
+- [~] **Tor.** The seam is wired: `ConfigureOnionTransport` mirrors the WebRTC one, `IOnionTransport` comes from
+      `CupriNet.Hosting` so the base package stays Tor-free, and a supplied transport reaches
+      `CupriNodeOptions.OnionTransport`. Requesting Tor without one is now **refused at startup** rather than
+      silently serving clearnet — an anonymity setting that quietly does not apply is the one failure mode it must
+      never have.
+
+      **Blocked on [CupriNet#2](https://github.com/Wixely/CupriNet/issues/2):** `CupriNet.Tor` is not published (its
+      CI skips packing it), so there is no concrete `IOnionTransport` to reference. When it lands, the
+      `CupriNet.Nodestar.Tor` package and `UseTor()` are about twenty lines. Writing our own binding over `CupriTor`
+      instead would be the transcription mistake that #1 just removed.
+
+      **Untestable here regardless:** this machine has no Tor network access, so even with the package the onion
+      path could not be exercised locally.
 - [ ] **Reliquary → the Shrine path.** Gates the hosted-app tier: an Oracle response is one message and a WASM app
       blob is far past the 256 KiB ceiling, so there is no way to deliver one without it.
 

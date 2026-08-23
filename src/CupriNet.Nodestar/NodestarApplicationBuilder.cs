@@ -65,6 +65,20 @@ public sealed class NodestarApplicationBuilder
     }
 
     /// <summary>
+    /// Supplies the optional onion transport. Like <see cref="ConfigureTransport"/>, the seam lives here so the base
+    /// package never references a Tor stack: <c>IOnionTransport</c> is a CupriNet.Hosting interface, and only
+    /// <c>CupriNet.Nodestar.Tor</c> supplies an implementation.
+    /// </summary>
+    public NodestarApplicationBuilder ConfigureOnionTransport(
+        Func<NodestarOptions, Action<string>, Task<IOnionTransport?>> factory)
+    {
+        OnionTransportFactory = factory ?? throw new ArgumentNullException(nameof(factory));
+        return this;
+    }
+
+    internal Func<NodestarOptions, Action<string>, Task<IOnionTransport?>>? OnionTransportFactory { get; private set; }
+
+    /// <summary>
     /// Serves a browser client of your choosing: a lookup from relative path to file. Null means no client is
     /// served, which is the right state for a gateway-only deployment.
     ///
@@ -85,5 +99,6 @@ public sealed class NodestarApplicationBuilder
     internal Func<NodestarOptions, Action<string>, IWebRtcTransport?>? TransportFactory { get; private set; }
 
     /// <summary>Assembles the application. Nothing binds a port or touches the network until <c>RunAsync</c>.</summary>
-    public NodestarApplication Build() => new(Node, Site, LoggerFactory, TransportFactory, ClientAssets);
+    public NodestarApplication Build() =>
+        new(Node, Site, LoggerFactory, TransportFactory, OnionTransportFactory, ClientAssets);
 }

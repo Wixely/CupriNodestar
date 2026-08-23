@@ -79,6 +79,9 @@ Prerelease is deliberate, not modesty: nothing has been consumed by anyone, the 
 ## What the CI cannot tell you
 
 - **The Docker image has never been built.** No Docker on the development machine, and no job builds it yet.
-- **Tor is not wired.** `EnableTor` is honoured by the options and does nothing.
+- **Tor has a seam but no transport.** `ConfigureOnionTransport` is wired and requesting Tor without a transport is
+  refused at startup, but `CupriNet.Tor` is unpublished
+  ([CupriNet#2](https://github.com/Wixely/CupriNet/issues/2)), so there is nothing to supply yet — and this machine
+  has no Tor access to test it with even once there is.
 - **Nothing is published to a feed**, so the packages have never been consumed as packages — every reference in this
   repository is a `ProjectReference`.
