@@ -42,8 +42,9 @@ for the protocol.
 ## Samples
 
 A separate samples solution streams **Constellation** — a live view of the node's own overlay — to the browser entirely
-over L2. Open a second tab and you watch yourself appear in the first tab's graph, arriving over the very connection
-being visualised.
+over L2. Start a second node and watch it appear in the first one's page, live, over the very connection being
+visualised. (Peers are **nodes**, not viewers: a browser visitor is a Pilgrim, which by design leaves no overlay
+trace and so never appears in the map.)
 
 Both show a **connection panel** naming the peer they are attached to — the `cupri1…` Signet, the transport, the session
 — so moving between nodes is unmistakable rather than inferred.

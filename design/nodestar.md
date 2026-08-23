@@ -364,11 +364,22 @@ rather than hiding it.
 Both projects render the same feed: **a live view of the node's own overlay.** The host streams its *real* activity —
 pilgrims connecting and dropping, rite invocations, per-session throughput — as a node/edge graph with sparklines.
 
-It is chosen over synthetic data because it is **self-demonstrating**: *open a second tab and you watch yourself appear
-in the first tab's graph*, arriving over the very connection being visualised. Snapshot-then-update is legible with no
-explanation, because the snapshot **is** the current constellation. Each viewer can set a nickname and colour that
-propagates to every other viewer — which exercises **upstream requests and fan-out** over the same channel without
-inventing a chat app. And the data is real, so the demo doubles as an operator's view of the node.
+It is chosen over synthetic data because it is **self-demonstrating**: *start a second node and watch it appear in the
+first one's page*, live, over the very connection being visualised. Snapshot-then-update is legible with no
+explanation, because the snapshot **is** the current constellation. And the data is real, so the demo doubles as an
+operator's view of the node.
+
+> **Peers are nodes, not viewers — and an earlier draft of this section got that wrong.** It claimed a second *tab*
+> would appear in the first tab's graph. It cannot. This feed projects the **L1 overlay map**, where an entry means
+> another CupriNode: durable identity, anchored overlay presence, a signed `PeerRecord`. A browser visitor is a
+> **Pilgrim** — throwaway identity per visit, and the Pilgrimage *skips the overlay join by design*, so there is no
+> record to project. Measured: with a browser client connected and streaming this feed, the count read `0 of 0` until
+> a second **node** started.
+>
+> That distinction is the architecture working as intended, not a gap: a visitor who leaves no overlay trace is
+> exactly what "the Shrine learns nothing durable about who visited" means. **If the demo should also show live
+> visitors, that is a separate feed** — the Shrine host knows its own attending Pilgrims — and it would need its own
+> think about what a visitor count reveals.
 
 > **What is safe to publish — an earlier claim in this doc was wrong.** A previous revision said peer identities and
 > addresses should be withheld from anonymous viewers. That is **incorrect**, and CupriNet's own security note corrects

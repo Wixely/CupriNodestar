@@ -1,7 +1,12 @@
 # Constellation
 
-A Nodestar whose website **is** the node's own view of the network. Open two of them and each appears in the other's
+A Nodestar whose website **is** the node's own view of the network. Run two *nodes* and each appears in the other's
 page — arriving over the very connection being visualised.
+
+> **Peers are nodes, not viewers.** The feed projects the L1 overlay map, so an entry means another CupriNode with a
+> durable identity and a signed record. A browser visitor is a **Pilgrim**: throwaway identity, and the Pilgrimage
+> skips the overlay join by design, so it leaves no trace to project and never appears here. Opening more tabs
+> changes nothing — which is the privacy property working, not a bug.
 
 It ships **no compiled UI and references no CupriFace**: HTML, CSS, and a live feed, served over L2. Rendering is the
 client's job. That is the claim the sample exists to make.

@@ -10,8 +10,14 @@ namespace Constellation;
 /// <summary>
 /// The live feed: this node's own view of the overlay, published over the Auspice rite.
 ///
-/// <para>It is real data, which is the point — open a second viewer and you watch yourself appear. It is also the
-/// reason this file is mostly about <b>what not to publish</b>.</para>
+/// <para>It is real data, which is the point: start a second <b>node</b> and it appears here within a poll. It is
+/// also the reason this file is mostly about <b>what not to publish</b>.</para>
+///
+/// <para><b>Peers are nodes, not viewers.</b> This projects the L1 overlay map, so an entry means another CupriNode:
+/// a durable identity, an anchored overlay presence, a signed <c>PeerRecord</c>. A browser visitor is none of those
+/// — a Pilgrim mints a throwaway identity per visit and <i>skips the overlay join entirely</i>, so it has no record
+/// to project and will never show up here no matter how many tabs are open. Verified: with a browser client fully
+/// connected and streaming this very feed, the count read <c>0 of 0</c> until a second node started.</para>
 /// </summary>
 /// <remarks>
 /// The node is resolved lazily. A feed has to be registered before the application starts, but the node it reports
