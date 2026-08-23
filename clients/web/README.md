@@ -6,7 +6,7 @@ WebRTC.
 
 ## Running it from VS Code
 
-Press **Run → "Constellation + client (Mode 1)"**. That publishes the client, stages it into the WebRtc package,
+Press **Run → "Constellation + client (Mode 1)"**. That publishes the client, stages it into the client package,
 builds the server, runs it, and opens the browser once the front is actually listening.
 
 The other configurations:
@@ -26,7 +26,7 @@ the node's overlay identity.
 
 ```bash
 dotnet publish clients/web/CupriNet.Nodestar.Client.csproj -c Release
-cp clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.WebRtc/client/
+cp clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.Client.CupriFace/client/
 ```
 
 The copy is what makes a server run serve the *current* client. Skip it and the host embeds whatever was staged last
@@ -88,11 +88,11 @@ No WebSockets, no SSE, no polling. The page is clearnet; everything after it rid
   `requestAnimationFrame` loop calls `Module._cupri_tick`, which drains queued continuations — only what was queued
   at entry, so a continuation that queues more work cannot starve the frame.
 - **A browser Pilgrim must not construct a `CupriNode`.** The node binds sockets;
-  `PlatformNotSupportedException: System.Net.Sockets`, measured. `BrowserPilgrim` is a faithful transcription of
-  `CupriNode.PilgrimageOverVesselAsync` over public upstream types (Toll → Noise pinning the Signet → the exact
-  `ShrineSession` mux wiring). **The right home for it is CupriNet** — a static, node-free Pilgrim entry, by
-  upstream's own "the Pilgrim half runs inside the client stack" reasoning; the one thing blocking plain reuse is
-  `ShrineSession`'s `internal` constructor. Until then this file must move in lockstep with `CupriNode.Shrine.cs`.
+  `PlatformNotSupportedException: System.Net.Sockets`, measured. This client used to carry a transcription of
+  upstream's Pilgrim path for that reason; since **CupriNet 0.3.3** it calls `Pilgrimage.OverVesselAsync` from the
+  socket-free `CupriNet.Shrine` package instead, so there is one implementation of the handshake again
+  ([CupriNet#1](https://github.com/Wixely/CupriNet/issues/1)). The bundle is the same size either way — trimming was
+  already dropping the overlay machinery — so the win is correctness, not weight.
 
 ## Rendering
 

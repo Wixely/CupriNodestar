@@ -51,8 +51,9 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
-- [ ] **[CupriNet#1](https://github.com/Wixely/CupriNet/issues/1)** — a node-free Pilgrim entry. Until it lands,
-      `clients/web/BrowserPilgrim.cs` is a hand transcription of `CupriNode.PilgrimageOverVesselAsync` and has to be
-      kept in step with it by eye.
+- [x] **[CupriNet#1](https://github.com/Wixely/CupriNet/issues/1)** — done, in CupriNet **0.3.3**. `ShrineSession`
+      moved to a socket-free `CupriNet.Shrine` package beside a static `Pilgrimage.OverVesselAsync`, with the
+      namespace kept and a `TypeForwardedTo` so nothing downstream had to be renamed. `BrowserPilgrim.cs` is deleted:
+      there is one implementation of the handshake again.
 - [ ] **[CupriFace#51](https://github.com/Wixely/CupriFace/issues/51)** — `repeat(auto-fill, minmax(…))` collapses
       grid tracks. Worked around with flex wrap; no action needed here unless it is fixed.

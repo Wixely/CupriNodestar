@@ -16,7 +16,7 @@
     feed. Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.3.2</CupriNetVersion>
+    <CupriNetVersion>0.3.3</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
     <CupriFaceVersion>0.2.11</CupriFaceVersion>
   </PropertyGroup>

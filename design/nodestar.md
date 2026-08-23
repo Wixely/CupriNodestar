@@ -13,7 +13,9 @@ HTTPS/proxy/IIS/Tor-aware), and the L2 hosting wired together. A thin reference 
 > the Wixely feed. A browser DataChannel arriving at a Shrine-hosting node already routes into the Pilgrimage with no
 > extra wiring. Nodestar keeps **plain** naming ("site") for approachability and maps it onto a CupriNet Shrine.
 >
-> **Upstream state:** CupriNet **`0.3.2`** consuming CupriWebRTC `0.3.1`. **Target 0.3.2 as the floor** — 0.3.2 adds a
+> **Upstream state:** CupriNet **`0.3.3`** consuming CupriWebRTC `0.3.1`. **Target 0.3.3 as the floor** — it adds
+> the socket-free `CupriNet.Shrine` package (a static `Pilgrimage.OverVesselAsync`), which is what lets a browser be
+> a Pilgrim without constructing a node. 0.3.2 remains the wire floor: — 0.3.2 adds a
 > version byte to the Oracle frame, a deliberate wire break against 0.3.0, and the `v0.3.1` tag published nothing (its
 > CI failed on a test race) and is inert.
 >

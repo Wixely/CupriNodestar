@@ -58,9 +58,17 @@
 
   <ItemGroup>
     <PackageReference Include="CupriFace" Version="$(CupriFaceVersion)" />
-    <PackageReference Include="CupriNet.Hosting" Version="$(CupriNetVersion)" />
+
+    <!-- CupriNet.Shrine, not CupriNet.Hosting. A Pilgrim visits a site; it does not run an overlay node, and Hosting
+         binds a TCP listener — PlatformNotSupportedException in a browser. Upstream split the Pilgrim side out for
+         exactly this (CupriNet#1), which deleted the hand transcription this client used to carry.
+
+         Measured, so the claim is not overstated: the bundle is the SAME SIZE either way (5.2 MB gzipped). Full
+         trimming was already dropping the overlay machinery, because nothing reached it — the split changes what is
+         referenced, not what is retained. The win is that a Pilgrim can no longer accidentally depend on a socket,
+         and that there stays exactly one implementation of the handshake. -->
+    <PackageReference Include="CupriNet.Shrine" Version="$(CupriNetVersion)" />
     <PackageReference Include="CupriNet.Alembic.BouncyCastle" Version="$(CupriNetVersion)" />
-    <PackageReference Include="CupriNet.Rites" Version="$(CupriNetVersion)" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
     <PackageReference Include="runtime.$(IlcHostRid).Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />

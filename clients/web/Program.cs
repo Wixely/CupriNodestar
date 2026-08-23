@@ -1,5 +1,8 @@
 using CupriNet.Alembic.BouncyCastle;
 using CupriNet.Core;
+// Pilgrimage and ShrineSession live in CupriNet.Hosting the NAMESPACE but ship in the CupriNet.Shrine PACKAGE —
+// upstream kept the namespace when it split them out, so nothing downstream had to be renamed.
+using CupriNet.Hosting;
 using CupriNet.Nodestar.Client;
 using CupriNet.Rites;
 using CupriNet.Vessel;
@@ -77,8 +80,8 @@ static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
     // From here down, nothing browser-specific remains: the DataChannel becomes a Vessel and the same protocol
     // code the node runs takes over — which is the entire reason to compile C# to wasm rather than reimplement it.
     var vessel = new DataChannelVessel(channel);
-    await using var shrine = await BrowserPilgrim.PilgrimageAsync(
-        vessel, signet, intonation.Network, suite, CancellationToken.None);
+    await using var shrine = await Pilgrimage.OverVesselAsync(
+        vessel, signet, intonation.Network, suite, cancellationToken: CancellationToken.None);
 
     Console.WriteLine("[cupri] pilgrimage complete — the Signet answered");
     BrowserNavigation.Status($"connected — {Bech32.Fingerprint(signet)}");
