@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 
-namespace CupriNet.Nodestar.WebRtc;
+namespace CupriNet.Nodestar.Client.CupriFace;
 
 /// <summary>
 /// Serves the browser client from resources embedded in this assembly, so a host ships the on-ramp without needing

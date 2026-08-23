@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      // Publishes the browser client and copies it where the WebRtc package embeds it from. This is the step that
+      // Publishes the browser client and copies it where the CupriFace client package embeds it from. This is the step that
       // makes "run the server" also mean "serve the current client" — without it the host embeds whatever was there
       // last time, which is a confusing way to debug a client change that appears to have no effect.
       "label": "client: publish",
@@ -12,18 +12,18 @@
       "presentation": { "reveal": "silent", "panel": "dedicated" }
     },
     {
-      "label": "client: stage into WebRtc package",
+      "label": "client: stage into the CupriFace client package",
       "type": "shell",
       "dependsOn": "client: publish",
       "windows": {
         "command": "powershell",
         "args": [
           "-NoProfile", "-Command",
-          "New-Item -ItemType Directory -Force src/CupriNet.Nodestar.WebRtc/client | Out-Null; Copy-Item -Force clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.WebRtc/client/"
+          "New-Item -ItemType Directory -Force src/CupriNet.Nodestar.Client.CupriFace/client | Out-Null; Copy-Item -Force clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.Client.CupriFace/client/"
         ]
       },
       "linux": {
-        "command": "mkdir -p src/CupriNet.Nodestar.WebRtc/client && cp -f clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.WebRtc/client/"
+        "command": "mkdir -p src/CupriNet.Nodestar.Client.CupriFace/client && cp -f clients/web/bin/Release/net10.0/browser-wasm/publish/* src/CupriNet.Nodestar.Client.CupriFace/client/"
       },
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "dedicated" }
@@ -39,7 +39,7 @@
       // The full chain a Mode-1 run needs: client published, staged, then the server built against it.
       "label": "build: server + client",
       "dependsOrder": "sequence",
-      "dependsOn": ["client: stage into WebRtc package", "build: server"],
+      "dependsOn": ["client: stage into the CupriFace client package", "build: server"],
       "problemMatcher": []
     },
 

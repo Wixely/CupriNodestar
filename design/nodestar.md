@@ -31,19 +31,18 @@ Nodestar is a **downstream product**, consuming from the Wixely feed:
 - **CupriNet** core — the overlay node, `Arcanum` / `Rites`, and the new **Shrine** / **Oracle** / **Signet** support.
 - **CupriNet.WebRtc** → **CupriWebRTC** — the browser on-ramp transport.
 
-**Where [CupriFace](https://github.com/Wixely/CupriFace) sits — the line moved, and it is worth stating precisely.**
-CupriFace is the **browser client's renderer**: it draws L2 site content to a canvas, so the client depends on it.
-Everything *server-side* stays CupriFace-free:
+**Where [CupriFace](https://github.com/Wixely/CupriFace) sits: it renders the *reference* client, and that is a
+preference of this project rather than anything the platform requires.**
 
 | | Depends on CupriFace? |
 |---|---|
 | `CupriNet.Nodestar` — node, Kestrel front, Shrine host, feeds, SSR | **No** |
+| `CupriNet.Nodestar.WebRtc` — the browser transport | **No** |
 | `cuprinet-nodestar` reference host + `dotnet new` template | **No** |
-| The served **browser client** (shipped by `.WebRtc`) | **Yes** — it is the renderer |
+| `CupriNet.Nodestar.Client.CupriFace` — the reference client | **Yes** — it *is* the renderer, and it is opt-in |
 
-The original constraint is preserved where it mattered: **a node hosting a site over Tor or Cloudflare drags in no UI
-runtime**, because Mode 2 renders server-side and never serves a client. What changed is that the *browser* half is no
-longer trying to avoid the one component built to render HTML without a browser engine.
+Nothing in CupriNet's L2 layer asks for it: an Oracle serves bytes with a content type, an Auspice streams bytes, and
+both are renderer-neutral. A different client, rendering however it likes, speaks the same protocol to the same nodes.
 
 A Nodestar **"site"** *is* a CupriNet **Shrine**; **`ISiteHandler`** maps onto the **Oracle** rite; a site's `cupri1…`
 address is its **Signet**. Authors work in plain terms and never touch the Lexicon.
@@ -92,12 +91,25 @@ completely custom L2 protocol — you still get node + web + client + identity f
 | Package | Gives you | Pulls |
 |---|---|---|
 | `CupriNet.Nodestar` | builder, node host, Kestrel web front, intonation page, L2 Shrine host + static/delegate handlers + Auspice feeds, **Mode-2 SSR** | CupriNet core (feed) + ASP.NET Core |
-| `CupriNet.Nodestar.WebRtc` | **Mode-1** browser on-ramp: serves the client, accepts DataChannels | `CupriNet.WebRtc` → CupriWebRTC. **No CupriFace package reference** — the renderer is compiled *into* the embedded wasm bundle, so it is a build-time dependency of `clients/web`, not a NuGet dependency of anything a host restores. |
+| `CupriNet.Nodestar.WebRtc` | **Mode-1** transport: a WebRTC endpoint browsers can dial. No opinion about what runs in the browser. | `CupriNet.WebRtc` → CupriWebRTC |
+| `CupriNet.Nodestar.Client.CupriFace` | the **reference client** — the CupriNet client stack compiled to WASM, rendered by CupriFace. Opt-in. | nothing extra: CupriFace is compiled *into* the embedded bundle, not restored as a package |
 | `cuprinet-nodestar` + `dotnet new nodestar-site` | run turnkey / scaffold a site, config-only | the above |
 
-**CupriFace never rides in as a package at all.** It is compiled into the client bundle that `.WebRtc` embeds, so no server-side project restores it — a stronger separation than the one originally planned. A pure
-static-or-SSR site over Tor needs only the **base** package and stays CupriFace-free — so a CupriFace regression cannot
-break the deployments that never serve a client.
+**CupriFace is a preference of this project, not a requirement of the platform — and the packaging now says so.**
+Accepting browser DataChannels and deciding what runs in the browser are separate concerns, so `UseWebRtc()` supplies
+only the transport and `ServeCupriFaceClient()` is a separate call in a separate package. Three honest shapes follow:
+
+| You want | You call |
+|---|---|
+| A site anywhere, no browser client (Tor, Cloudflare) | nothing — base package, Mode 2 |
+| Browsers can dial you; you serve no client | `UseWebRtc()` |
+| Browsers can dial you; you serve *this* client | `UseWebRtc()` + `ServeCupriFaceClient()` |
+| Browsers can dial you; you serve *your own* | `UseWebRtc()` + `ServeClient(...)` |
+
+Nothing in CupriNet's L2 layer asks for CupriFace: an Oracle serves bytes with a content type and an Auspice streams
+bytes, both renderer-neutral. **What a renderer does set is the site-authoring contract** — choosing CupriFace means
+sites cannot script (it embeds no JS engine) and bind live values through `{{ }}` instead. That is a real commitment,
+which is exactly why it should be a visible line of code rather than something the transport decides for you.
 
 ## Two serving modes
 

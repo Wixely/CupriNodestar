@@ -21,9 +21,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
-    <!-- The browser on-ramp. Note what this does NOT drag in: CupriFace is compiled into the embedded client bundle,
-         not referenced as a package, so this project still has no UI-runtime dependency of its own. -->
+    <!-- The browser on-ramp: transport only, no opinion about what runs in the browser. -->
     <ProjectReference Include="..\..\src\CupriNet.Nodestar.WebRtc\CupriNet.Nodestar.WebRtc.csproj" />
+    <!-- The reference client, opted into explicitly. CupriFace is compiled INTO that bundle rather than referenced
+         as a package, so even here this project takes no UI-runtime dependency of its own — and dropping this line
+         leaves a node that still accepts browsers, just without shipping one a client. -->
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.Client.CupriFace\CupriNet.Nodestar.Client.CupriFace.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,6 @@
 using Constellation;
 using CupriNet.Nodestar;
+using CupriNet.Nodestar.Client.CupriFace;
 using CupriNet.Nodestar.WebRtc;
 
 // Constellation — a Nodestar that serves a website whose content is the node's own view of the network.
@@ -16,9 +17,11 @@ builder.Node.Concordium = builder.Configuration["Concordium"] ?? "constellation-
 builder.Site.ServeStaticFiles(
     builder.Configuration["SiteRoot"] ?? Path.Combine(AppContext.BaseDirectory, "site"));
 
-// Mode 1: give the node a WebRTC endpoint and serve the WASM client that dials it. Mode 2 keeps working either way,
-// which is why this is additive rather than a switch.
+// Mode 1, in two deliberate halves. The transport accepts browser DataChannels and has no opinion about what runs
+// in the browser; serving a client is a separate choice, made here rather than for you. CupriFace is this project's
+// preference — swap the second line for ServeClient(...) and the first keeps working unchanged.
 builder.UseWebRtc();
+builder.ServeCupriFaceClient();
 
 var app = builder.Build();
 
@@ -32,7 +35,7 @@ Console.WriteLine("  Constellation");
 Console.WriteLine($"  Site      http://localhost:{builder.Node.WebPort}/            (Mode 2 — server-rendered)");
 Console.WriteLine($"  Feed      http://localhost:{builder.Node.WebPort}/_nodestar/feed/overlay");
 Console.WriteLine($"  Node      http://localhost:{builder.Node.WebPort}/_nodestar   (link + QR)");
-Console.WriteLine($"  Client    http://localhost:{builder.Node.WebPort}/_nodestar/app (Mode 1 � WASM over WebRTC)");
+Console.WriteLine($"  Client    http://localhost:{builder.Node.WebPort}/_nodestar/app (Mode 1 � WASM over WebRTC)");
 Console.WriteLine();
 
 await app.RunAsync();

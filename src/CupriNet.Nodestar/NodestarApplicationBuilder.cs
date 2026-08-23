@@ -65,9 +65,21 @@ public sealed class NodestarApplicationBuilder
     }
 
     /// <summary>
-    /// Supplies the served browser client's files, keyed by relative path. Set by the WebRtc package; null means no
-    /// client is served, which is the correct state for a gateway-only deployment.
+    /// Serves a browser client of your choosing: a lookup from relative path to file. Null means no client is
+    /// served, which is the right state for a gateway-only deployment.
+    ///
+    /// <para><b>The transport does not choose this.</b> Accepting browser DataChannels and deciding what runs in the
+    /// browser are separate concerns, so <c>UseWebRtc</c> does not set it. Nodestar's reference client lives in
+    /// <c>CupriNet.Nodestar.Client.CupriFace</c> and is opted into with <c>ServeCupriFaceClient()</c>; anything that
+    /// speaks the CupriNet client protocol can take its place here.</para>
     /// </summary>
+    public NodestarApplicationBuilder ServeClient(Func<string, ClientAsset?> assets)
+    {
+        ClientAssets = assets ?? throw new ArgumentNullException(nameof(assets));
+        return this;
+    }
+
+    /// <summary>The client file lookup, if one was supplied.</summary>
     public Func<string, ClientAsset?>? ClientAssets { get; set; }
 
     internal Func<NodestarOptions, Action<string>, IWebRtcTransport?>? TransportFactory { get; private set; }

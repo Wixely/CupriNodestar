@@ -56,6 +56,6 @@ probe/*/obj/
 # VS Code launch data directories
 /.run/
 
-# Staged client bundle (regenerate with the "client: stage into WebRtc package" task)
-src/CupriNet.Nodestar.WebRtc/client/*
-!src/CupriNet.Nodestar.WebRtc/client/.gitkeep
+# Staged client bundle (regenerate with the "client: stage into the CupriFace client package" task)
+src/CupriNet.Nodestar.Client.CupriFace/client/*
+!src/CupriNet.Nodestar.Client.CupriFace/client/.gitkeep

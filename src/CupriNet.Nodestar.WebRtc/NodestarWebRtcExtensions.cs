@@ -47,7 +47,10 @@ public static class NodestarWebRtcExtensions
             }
         });
 
-        builder.ClientAssets = EmbeddedClientAssets.Get;
+        // Deliberately does NOT serve a client. Accepting browser DataChannels and deciding what runs in the browser
+        // are separate concerns, and this package only owns the first. Add ServeCupriFaceClient() for the reference
+        // client, or ServeClient(...) for your own — a node with a WebRTC endpoint and no client is a perfectly
+        // coherent thing, reachable by any client someone else is running.
         return builder;
     }
 }

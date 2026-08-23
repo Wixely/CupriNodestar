@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The reference browser client, rendered by CupriFace — packaged separately so that choosing it is a decision.
+
+    CupriFace is this project's preference, not a requirement of the platform. Nothing about CupriNet's L2 side asks
+    for it: an Oracle serves bytes with a content type and an Auspice streams bytes, both renderer-neutral. So the
+    transport (CupriNet.Nodestar.WebRtc) accepts browsers without opinion, and this package supplies one particular
+    client for them. Bring your own instead and the transport neither knows nor cares.
+
+    It is also where the weight is: ~4.5 MB gzipped, almost all of it renderer. A host that serves its own client, or
+    none, should not carry that.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>CupriNet.Nodestar.Client.CupriFace</RootNamespace>
+    <Description>Nodestar's reference browser client — the CupriNet client stack compiled to WebAssembly with CupriFace as its renderer. Optional: the WebRTC on-ramp serves whatever client you give it.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The published client bundle, embedded so the package is self-contained: a host serves the on-ramp without
+         needing the wasm toolchain or a build step of its own. Populated by clients/web's publish output; the glob
+         is empty until that has been published at least once. -->
+    <EmbeddedResource Include="client\**\*" LogicalName="client.%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

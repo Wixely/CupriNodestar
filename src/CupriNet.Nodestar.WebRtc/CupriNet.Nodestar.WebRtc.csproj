@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Mode 1 — the browser on-ramp. Two jobs: give the node a WebRTC endpoint browsers can dial, and serve the WASM
-    client that dials it.
+    Mode 1 — the browser on-ramp. ONE job: give the node a WebRTC endpoint that browsers can dial.
 
-    This is the package that pulls CupriFace, because it is the package that serves a browser client and CupriFace is
-    that client's renderer. The base CupriNet.Nodestar stays free of it, so a Tor or Cloudflare deployment — which
-    serves no client at all — carries no UI runtime.
+    It does not decide what runs in the browser. Nodestar's reference client (CupriFace-rendered) is a separate
+    opt-in package, because CupriFace is this project's preference rather than the platform's requirement — and
+    because a node with an endpoint and no client of its own is perfectly coherent, reachable by whatever client the
+    visitor is already running.
   -->
 
   <PropertyGroup>
