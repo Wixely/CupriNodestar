@@ -106,12 +106,37 @@ mergeInto(LibraryManager.library, {
   cupri_seed__deps: ['$cupri'],
   cupri_seed: function (ptr, cap) {
     // globalThis, not Module: under the dotnet.js loader the page never owns the Module object, so the bridge
-    // between page and module scope is a global — the same pattern CupriFace's imports.js uses.
+    // between page and module scope is a global ï¿½ the same pattern CupriFace's imports.js uses.
     const seed = (globalThis.__cupri && globalThis.__cupri.seed) ? globalThis.__cupri.seed : '';
     const bytes = lengthBytesUTF8(seed) + 1;
     if (bytes > cap) return -1;
     stringToUTF8(seed, ptr, cap);
     return bytes - 1;
+  },
+
+  // --- rendering -----------------------------------------------------------------------------------------------
+
+  // Blits a rendered frame onto the page's canvas. The bytes are STRAIGHT (unpremultiplied) RGBA because that is
+  // what ImageData means; the managed side converts out of Skia's premultiplied surface before calling.
+  cupri_present__deps: ['$cupri'],
+  cupri_present: function (rgba, w, h) {
+    const canvas = globalThis.__cupri && globalThis.__cupri.canvas;
+    if (!canvas) return;
+    // A view over the wasm heap, not a copy: putImageData reads it synchronously, so there is nothing to outlive.
+    const view = new Uint8ClampedArray(HEAPU8.buffer, rgba, w * h * 4);
+    canvas.getContext('2d').putImageData(new ImageData(view, w, h), 0, 0);
+  },
+
+  cupri_canvas_width__deps: ['$cupri'],
+  cupri_canvas_width: function () {
+    const c = globalThis.__cupri && globalThis.__cupri.canvas;
+    return c ? c.width : 0;
+  },
+
+  cupri_canvas_height__deps: ['$cupri'],
+  cupri_canvas_height: function () {
+    const c = globalThis.__cupri && globalThis.__cupri.canvas;
+    return c ? c.height : 0;
   },
 
   cupri_send__deps: ['$cupri'],

@@ -94,7 +94,24 @@ No WebSockets, no SSE, no polling. The page is clearnet; everything after it rid
   upstream's own "the Pilgrim half runs inside the client stack" reasoning; the one thing blocking plain reuse is
   `ShrineSession`'s `internal` constructor. Until then this file must move in lockstep with `CupriNode.Shrine.cs`.
 
+## Rendering
+
+CupriFace paints the fetched document into the page's canvas. Two things the host owns, both learned the hard way:
+
+- **The host clears the background.** CupriFace paints a document onto whatever surface it is handed, and a fresh
+  Skia surface is transparent — so the site composited onto the client's dark chrome and rendered dark-on-dark:
+  technically correct, practically unreadable. White, because that is what a browser shows a page that asks for
+  nothing; a site that wants otherwise paints over it.
+- **Straight alpha, not premultiplied.** Skia composites premultiplied; `ImageData` means straight. The read-back
+  converts. Skipping it gives a picture that is subtly wrong on anything translucent.
+
+Fonts are embedded (Noto Sans, OFL) because wasm has no system font list: without them text lays out and paints as
+nothing, which reads as a broken renderer rather than a missing asset.
+
+Verified by sampling the canvas, not by trusting a log line: **1280x432, every pixel opaque, 64 distinct colours**
+with antialiasing greys — real typography, correct layout, the panel's rounded border and all.
+
 ## What remains
 
-Rendering. The markup arrives and is counted, not yet painted — wiring CupriFace to the canvas is the next step, and
-the bundle will grow toward the probe's 4.5 MB gzipped when it lands. And the connection panel, which today is a log.
+The connection panel is still a log rather than the designed panel, and the page is painted once rather than
+re-painted as feed updates arrive — the pump is there, the redraw is not wired to it.

@@ -88,6 +88,13 @@
     <DirectPInvoke Include="js" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Wasm has no system font list to fall back on, so the renderer needs faces of its own or text lays out and
+         paints as nothing — a missing asset that reads as a broken renderer. Noto Sans (OFL, licence alongside),
+         the same faces CupriFace's own web hosts embed. -->
+    <EmbeddedResource Include="Assets\fonts\*.ttf" LogicalName="fonts.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <Target Name="CopyHostPage" AfterTargets="Publish">
     <Copy SourceFiles="wwwroot/index.html" DestinationFolder="$(PublishDir)" />
   </Target>

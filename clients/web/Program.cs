@@ -53,9 +53,14 @@ static async Task RunClientAsync()
         vessel, signet, intonation.Network, suite, CancellationToken.None);
     Console.WriteLine("[cupri] pilgrimage complete — the Signet answered");
 
+    // ONE consult for the whole document. An Oracle response is a single message over a channel where every fetch
+    // costs a full round trip, so a site that links its stylesheet pays twice for one page — and CupriFace reads
+    // <style> elements out of the DOM anyway, so a self-contained document is both cheaper and the natural shape.
     var page = await shrine.ConsultAsync(OracleRequest.Get("/index.html"));
     Console.WriteLine($"[cupri] site answered {page.Status} ({page.Body.Length} bytes, {page.ContentType})");
-    Console.WriteLine($"[cupri] {page.AsText().Length} characters of markup ready to render");
+
+    BrowserRenderer.Show(page.AsText());
+    Console.WriteLine("[cupri] painted");
 
     // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage.
     await foreach (var frame in shrine.AttendAsync("overlay"))

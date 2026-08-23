@@ -51,7 +51,14 @@
       write('[cupri] fetching seed…');
       const seedResponse = await fetch('intonation.json', { cache: 'no-store' });
       const seed = (await seedResponse.json()).link;
-      globalThis.__cupri = { seed };
+      // The canvas is sized in device pixels here so the engine renders at the display's real resolution rather
+      // than being scaled up and blurred. imports.js reads both back through this same bridge.
+      const canvas = document.getElementById('viewport');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(canvas.clientWidth * dpr);
+      canvas.height = Math.round(canvas.clientHeight * dpr);
+
+      globalThis.__cupri = { seed, canvas };
       write('[cupri] seed received (' + seed.length + ' chars)');
 
       const runtime = await dotnet.withDiagnosticTracing(false).create();
