@@ -60,9 +60,16 @@ renderer.
 
 ## Status
 
-Design / pre-implementation. The CupriNet capability underneath it — Shrines (Signet, Pilgrimage, Oracle) plus the
-**Auspice** live-feed rite, all over WebRTC — is **built and released** in CupriNet **0.3.2**, so this repo is product
-work on a working protocol. See [`design/nodestar.md`](design/nodestar.md).
+**Working end to end, not yet packaged.** Both modes run: a site served over plain HTTP anywhere (Mode 2), and a
+browser client that dials the node over WebRTC, completes a Pilgrimage, fetches the site over L2 and renders it live
+(Mode 1) — verified in real Chromium by an automated gate.
+
+What it is not yet is *consumable*: nothing is published to a feed, there is no project template, and the container
+image has never been built. See **[TODO.md](TODO.md)** for the honest list.
+
+The CupriNet capability underneath — Shrines (Signet, Pilgrimage, Oracle) plus the **Auspice** live-feed rite, all
+over WebRTC — is built and released in CupriNet **0.3.2**, so this is product work on a working protocol. See
+[`design/nodestar.md`](design/nodestar.md) for the full design.
 
 ## License
 

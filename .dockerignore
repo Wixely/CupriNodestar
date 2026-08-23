@@ -1,0 +1,32 @@
+# The build context is the whole repository (project references under src/ need to be in it), so what is excluded
+# here is the difference between a fast build and shipping every local build output to the daemon.
+
+# Build outputs — the big one. Without this the context carries the staged wasm bundle (~5 MB) and every bin/obj in
+# the tree, none of which the image uses: the build stage compiles from source.
+**/bin/
+**/obj/
+artifacts/
+publish/
+
+# Probe and client publish output, for the same reason. The reference host is Mode 2 and serves no browser client.
+probe/*/bin/
+clients/web/bin/
+src/CupriNet.Nodestar.Client.CupriFace/client/
+
+# Local run state. .run/ holds data directories from VS Code launches — each one contains a node identity and a
+# site Signet, which have no business inside an image.
+.run/
+data/
+
+.git/
+.github/
+.vscode/
+
+# Documentation and tests: not needed to build the host, and they are the bulk of the file count.
+design/
+tests/
+samples/
+**/*.md
+
+.DS_Store
+Thumbs.db
