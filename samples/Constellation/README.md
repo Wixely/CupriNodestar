@@ -11,6 +11,31 @@ page — arriving over the very connection being visualised.
 It ships **no compiled UI and references no CupriFace**: HTML, CSS, and a live feed, served over L2. Rendering is the
 client's job. That is the claim the sample exists to make.
 
+## The demo, from VS Code
+
+**Run → "Demo: two nodes + browser"**. That builds the client, stages it, starts two independent nodes, and opens the
+browser client on alpha once its web front is actually listening.
+
+Then, to move between nodes:
+
+1. **Ctrl+Shift+P → Run Task → "demo: copy beta's link"** — beta's link lands on the clipboard.
+2. Paste it into the client's address bar and press **Go**.
+
+The chrome status changes from alpha's `cupri1…` to beta's, and the page becomes beta's own site. The status line and
+the site's own connection panel are independent claims that should agree — the chrome is the one to trust, because a
+site cannot write there.
+
+That copy step is the one part that cannot be automated: a link is minted at runtime and carries live reachability,
+so there is nothing sensible to hard-code and nothing to pre-fill.
+
+**The two nodes deliberately do not know each other.** Navigation is dialling a link, not following the overlay — so
+`Peers` stays `0 of 0` on both. If you also want them listing each other, launch **"Constellation: beta (seeded from
+alpha)"** instead and paste alpha's link (there is a task for that too) at the prompt.
+
+> Both nodes must pass `--AdvertiseSiteInLink true`, and the configs do. A Pilgrim pins the site's Signet, so a node
+> that does not put one in its link cannot be visited at all — the client reports *"that node advertises no site in
+> its link"*.
+
 ## Run one
 
 ```bash

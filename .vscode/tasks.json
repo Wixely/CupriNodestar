@@ -44,6 +44,42 @@
     },
 
     {
+      // Puts beta's link on the clipboard, ready to paste into the client's address bar. This is the one step of
+      // the demo that cannot be automated away: a link is minted at runtime and carries live reachability, so there
+      // is nothing sensible to hard-code and no way to pre-fill it.
+      "label": "demo: copy beta's link",
+      "type": "shell",
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile", "-Command",
+          "$l = (Invoke-RestMethod http://localhost:8081/_nodestar/link.json).link; $l | Set-Clipboard; Write-Host 'beta link copied to clipboard:'; Write-Host $l"
+        ]
+      },
+      "linux": {
+        "command": "curl -s http://localhost:8081/_nodestar/link.json | python3 -c \"import sys,json;print(json.load(sys.stdin)['link'])\""
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "demo: copy alpha's link",
+      "type": "shell",
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile", "-Command",
+          "$l = (Invoke-RestMethod http://localhost:8080/_nodestar/link.json).link; $l | Set-Clipboard; Write-Host 'alpha link copied to clipboard:'; Write-Host $l"
+        ]
+      },
+      "linux": {
+        "command": "curl -s http://localhost:8080/_nodestar/link.json | python3 -c \"import sys,json;print(json.load(sys.stdin)['link'])\""
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+
+    {
       // The product suite: SiteBuilder and the Mode-2 gateway's snapshot path.
       "label": "test: product",
       "type": "shell",

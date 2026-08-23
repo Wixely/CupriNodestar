@@ -54,8 +54,12 @@
       }
     },
     {
-      // The second node, for the demo that actually shows something: two of these find each other and each appears
-      // in the other's graph. Seed it with alpha's link from http://localhost:8080/_nodestar/link.json.
+      // The second node for the navigation demo. It does NOT need to know alpha: the browser moves between nodes by
+      // dialling a link, and the two nodes never have to have met. Seeding only matters if you also want each to
+      // list the other as a peer — see "Constellation: beta (seeded from alpha)" for that.
+      //
+      // AdvertiseSiteInLink is not optional here. A Pilgrim pins the site's Signet, so a node that does not put one
+      // in its link cannot be visited at all — the client reports "that node advertises no site in its link".
       "name": "Constellation: beta (second node)",
       "type": "coreclr",
       "request": "launch",
@@ -68,15 +72,31 @@
         "--DataDirectory", "${workspaceFolder}/.run/beta",
         "--EnablePortMapping", "false",
         "--EnableLanDiscovery", "false",
+        "--AdvertiseSiteInLink", "true"
+      ],
+      "cwd": "${workspaceFolder}/samples/Constellation",
+      "console": "integratedTerminal"
+    },
+    {
+      // Beta, seeded from alpha, so the two appear in each other's peer list. Get alpha's link with the
+      // "demo: copy alpha's link" task (it lands on the clipboard) and paste it at the prompt.
+      "name": "Constellation: beta (seeded from alpha)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build: server",
+      "program": "${workspaceFolder}/samples/Constellation/bin/Debug/net10.0/Constellation.dll",
+      "args": [
+        "--WebPort", "8081",
+        "--ListenPort", "47655",
+        "--Moniker", "beta",
+        "--DataDirectory", "${workspaceFolder}/.run/beta",
+        "--EnablePortMapping", "false",
+        "--EnableLanDiscovery", "false",
+        "--AdvertiseSiteInLink", "true",
         "--SeedLinks:0", "${input:seedLink}"
       ],
       "cwd": "${workspaceFolder}/samples/Constellation",
-      "console": "integratedTerminal",
-      "serverReadyAction": {
-        "action": "openExternally",
-        "pattern": "Web front listening on http://[^:]+:([0-9]+)",
-        "uriFormat": "http://localhost:%s/"
-      }
+      "console": "integratedTerminal"
     },
     {
       // Debug the samples tests — breakpoints in OverlayFeed and its redaction tests. VSTEST_HOST_DEBUG makes the
@@ -108,10 +128,16 @@
   ],
   "compounds": [
     {
-      // Both nodes at once. Beta still needs alpha's link pasted in, because a link is minted at runtime and there
-      // is nothing sensible to hard-code.
-      "name": "Two nodes (alpha + beta)",
-      "configurations": ["Constellation (Mode 2 — gateway only)", "Constellation: beta (second node)"],
+      // ▶ THE DEMO. Starts two independent nodes and opens the browser client on alpha.
+      //
+      // To move between them: run the "demo: copy beta's link" task (Ctrl+Shift+P → Run Task), then paste into the
+      // client's address bar and press Go. The chrome status changes from alpha's cupri1… to beta's, and the page
+      // becomes beta's own site.
+      //
+      // The nodes deliberately do NOT know each other: navigation is dialling a link, not following the overlay.
+      // Use "Constellation: beta (seeded from alpha)" instead if you also want them listing each other as peers.
+      "name": "Demo: two nodes + browser",
+      "configurations": ["Constellation + client (Mode 1)", "Constellation: beta (second node)"],
       "stopAll": true
     }
   ],
