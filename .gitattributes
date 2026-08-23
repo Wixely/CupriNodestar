@@ -1,0 +1,28 @@
+# Normalise line endings. Every commit in this repository so far has printed a wall of "LF will be replaced by CRLF"
+# warnings, because nothing told git what these files are. Left alone it also means a Linux CI runner and a Windows
+# developer can disagree about whether a file changed.
+* text=auto eol=lf
+
+# Shell scripts and anything a Linux container executes must keep LF, or the shebang line ends in \r and the file
+# fails with a confusing "not found" naming an interpreter that plainly exists.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Windows-native tooling is happier with CRLF, and nothing else reads these.
+*.ps1           text eol=crlf
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+
+# Binary: never touch, never diff. The fonts especially — a line-ending "fix" applied to a TTF silently corrupts it.
+*.ttf           binary
+*.png           binary
+*.jpg           binary
+*.ico           binary
+*.wasm          binary
+*.nupkg         binary
+*.snupkg        binary
+
+# Generated wasm output is not worth diffing even when it is text.
+*.js            text eol=lf -diff

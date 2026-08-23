@@ -21,6 +21,9 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     private readonly List<string> _log = [];
     private readonly List<string> _pageErrors = [];
 
+    /// <summary>Names the diagnostics files. Set by each test so a CI artifact says which one produced it.</summary>
+    private string _diagnosticsName = "browser";
+
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IPage? _page;
@@ -57,6 +60,8 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     [Fact]
     public async Task The_client_dials_the_node_that_served_it_and_renders_its_site()
     {
+        _diagnosticsName = "renders-its-site";
+
         // 1. The module runs at all. A stripped export or a blocked event loop dies before this line.
         await ExpectLogAsync("client starting");
 
@@ -85,6 +90,8 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     [Fact]
     public async Task A_feed_update_repaints_the_page()
     {
+        _diagnosticsName = "feed-repaints";
+
         // The Document tier has no JavaScript engine, so nothing in the page can react to anything: keeping the view
         // current is the client's job. If binding is trimmed away this still logs a Snapshot and renders nothing.
         await ExpectLogAsync("feed Snapshot");
@@ -184,8 +191,45 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
 
     private readonly record struct CanvasState(int Total, int Opaque, int Distinct, string Fingerprint);
 
+    /// <summary>
+    /// Writes everything needed to diagnose this run from somewhere else.
+    ///
+    /// <para>The whole chain lives inside a wasm module in a headless browser, so a failure two machines away is
+    /// otherwise a bare assertion message. A screenshot plus both logs is the difference between "the gate failed"
+    /// and knowing whether the module started, whether the handshake completed, and what the page actually looked
+    /// like when it gave up. CI uploads this directory whatever the outcome.</para>
+    /// </summary>
+    private async Task CaptureDiagnosticsAsync()
+    {
+        var directory = Environment.GetEnvironmentVariable("CUPRI_DIAGNOSTICS");
+        if (string.IsNullOrWhiteSpace(directory) || _page is null) return;
+
+        var name = _diagnosticsName;
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            await _page.ScreenshotAsync(new PageScreenshotOptions
+            {
+                Path = Path.Combine(directory, $"{name}.png"),
+                FullPage = true,
+            });
+
+            var canvas = await CanvasAsync();
+            await File.WriteAllTextAsync(Path.Combine(directory, $"{name}.log"), Diagnosis(
+                $"canvas: {canvas.Total} px, {canvas.Opaque} opaque, {canvas.Distinct} distinct colours"));
+        }
+        catch (Exception ex)
+        {
+            // A page that already died cannot be screenshotted; say so rather than losing the logs with it.
+            await File.WriteAllTextAsync(Path.Combine(directory, $"{name}.log"),
+                Diagnosis($"could not capture the page ({ex.GetType().Name}: {ex.Message.Split('\n')[0]})"));
+        }
+    }
+
     public async Task DisposeAsync()
     {
+        await CaptureDiagnosticsAsync();
         if (_browser is not null) await _browser.CloseAsync();
         _playwright?.Dispose();
     }

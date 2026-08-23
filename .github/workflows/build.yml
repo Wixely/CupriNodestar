@@ -3,12 +3,18 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
+env:
+  # Every build carries its run number: 0.1.0-alpha.47, not a hundred artifacts all called 0.1.0-alpha. These builds
+  # exist so people can try the thing and send back a log, and the first question about any log is "which build?".
+  VERSION: 0.1.0-alpha.${{ github.run_number }}
+
 jobs:
-  # The product: both solutions, both test suites. Two solutions exist so a sample can take a dependency the product
-  # must not, and the consequence is that building one proves nothing about the other — so this builds both.
+  # Both solutions, both suites. Two solutions exist so a sample can take a dependency the product must not, and the
+  # consequence is that building one proves nothing about the other.
   build:
     runs-on: windows-latest
     steps:
@@ -27,26 +33,86 @@ jobs:
             --store-password-in-clear-text
 
       - name: Build the product
-        run: dotnet build Nodestar.slnx -c Release
+        run: dotnet build Nodestar.slnx -c Release -p:Version=$env:VERSION
 
+      # trx, so a failure arrives as a file someone can attach rather than a screenshot of a terminal.
       - name: Test the product
-        run: dotnet test Nodestar.slnx -c Release --no-build
+        run: dotnet test Nodestar.slnx -c Release --no-build --logger "trx;LogFileName=product.trx" --results-directory artifacts/test-results
 
-      # The samples are a separate solution and therefore a separate build. The redaction tests live here — the ones
-      # guarding what a public feed may disclose — so skipping them would mean a green run over the checks that
-      # matter most.
       - name: Build the samples
-        run: dotnet build samples/Samples.slnx -c Release
+        run: dotnet build samples/Samples.slnx -c Release -p:Version=$env:VERSION
 
       - name: Test the samples
-        run: dotnet test samples/Samples.slnx -c Release --no-build
+        run: dotnet test samples/Samples.slnx -c Release --no-build --logger "trx;LogFileName=samples.trx" --results-directory artifacts/test-results
 
-  # Mode 1, in a real browser. The chain this covers — dial, Pilgrimage, Oracle fetch, render, live update — fails
-  # SILENTLY in every way that matters: a stripped export, a trimmed binder, a missing font and an uncleared
-  # background all produce a page that loads and shows nothing. Nothing throws, so nothing else catches them.
-  #
-  # It needs the wasm client published and staged, which is why it is a separate job: an ordinary `dotnet test` must
-  # not be able to fail on a build step someone did not run.
+      - name: Pack
+        run: dotnet pack Nodestar.slnx -c Release --no-build -p:Version=$env:VERSION -o artifacts/nuget
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: artifacts/test-results
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/nuget
+
+  # Something a person can download, unzip and run — which is the point of these builds. Mode 2 (the site served
+  # over plain HTTP) needs no browser client and no wasm toolchain, so it is the example that works everywhere and
+  # builds in seconds.
+  example:
+    # Waits for the browser job so it can take the built wasm client from it. Otherwise the example would ship with
+    # an empty client bundle: Mode 2 would work, /_nodestar/app would 404, and the README in the zip would be
+    # describing something the download cannot do. Building the client here instead would mean installing the wasm
+    # toolchain three more times, once per RID.
+    needs: browser
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, linux-x64, osx-arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Authenticate the Wixely feed
+        shell: bash
+        run: |
+          dotnet nuget update source GitHub-Wixely-Packages \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}" \
+            --store-password-in-clear-text
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: browser-client
+          path: src/CupriNet.Nodestar.Client.CupriFace/client
+
+      # Self-contained: no .NET install required to try it. That matters for "download this and tell me what happens" —
+      # a runtime prerequisite is the step where most people stop.
+      - name: Publish the Constellation example
+        run: |
+          dotnet publish samples/Constellation/Constellation.csproj -c Release \
+            -r ${{ matrix.rid }} --self-contained true \
+            -p:Version=${{ env.VERSION }} \
+            -o artifacts/example-${{ matrix.rid }}
+
+      - name: Include the instructions beside the binary
+        run: cp samples/Constellation/README.md artifacts/example-${{ matrix.rid }}/README.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: constellation-${{ matrix.rid }}
+          path: artifacts/example-${{ matrix.rid }}
+
+  # Mode 1 in a real browser: dial, Pilgrimage, Oracle fetch, render, live update. Every failure in that chain is
+  # SILENT — a stripped export, a trimmed binder, a missing font, an uncleared background all produce a page that
+  # loads and shows nothing. Nothing throws, so nothing else catches them.
   browser:
     runs-on: windows-latest
     steps:
@@ -70,6 +136,7 @@ jobs:
       - name: Publish the browser client
         run: dotnet publish clients/web/CupriNet.Nodestar.Client.csproj -c Release
 
+      # Staged, THEN built: the bundle is an embedded resource, so building before staging embeds the previous one.
       - name: Stage it into the client package
         shell: bash
         run: |
@@ -79,19 +146,37 @@ jobs:
       - name: Build the gate
         run: dotnet build tests/CupriNet.Nodestar.BrowserTests/CupriNet.Nodestar.BrowserTests.csproj -c Release
 
-      # Playwright's own installer, so the browser matches the binding rather than whatever the runner ships.
       - name: Install Chromium
         shell: pwsh
         run: tests/CupriNet.Nodestar.BrowserTests/bin/Release/net10.0/playwright.ps1 install chromium --with-deps
 
       - name: Run the gate
-        run: dotnet test tests/CupriNet.Nodestar.BrowserTests/CupriNet.Nodestar.BrowserTests.csproj -c Release --no-build
+        env:
+          CUPRI_DIAGNOSTICS: ${{ github.workspace }}/artifacts/browser-diagnostics
+        run: dotnet test tests/CupriNet.Nodestar.BrowserTests/CupriNet.Nodestar.BrowserTests.csproj -c Release --no-build --logger "trx;LogFileName=browser.trx" --results-directory artifacts/test-results
+
+      # Always: a screenshot of what the page looked like plus both logs — the client's and the node's. Without this
+      # a failure on someone else's machine is a bare assertion message about a chain that lives inside a wasm
+      # module in a headless browser.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-diagnostics
+          path: |
+            artifacts/browser-diagnostics
+            artifacts/test-results
+
+      # The staged bundle, so a Mode-1 example can be assembled without the wasm toolchain.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-client
+          path: clients/web/bin/Release/net10.0/browser-wasm/publish
 
   # The CupriFace boundary, enforced rather than asserted.
   #
-  # PackagingBoundaryTests already checks that no project under src/ or node/ REFERENCES CupriFace. This is the
-  # stronger version: build the server-side packages with the feed that carries CupriFace switched off entirely, so
-  # a dependency that crept in transitively — via a package rather than a project file — cannot restore either.
+  # PackagingBoundaryTests checks that no project under src/ or node/ REFERENCES CupriFace. This is the stronger
+  # version: restore the server-side projects into an isolated package directory and fail if a renderer lands there,
+  # which catches a transitive arrival a project-file scan cannot see.
   #
   # A node serving its site over Tor or a Cloudflare tunnel carries no UI runtime. That is a claim the README makes;
   # this is what makes it true.
@@ -136,3 +221,41 @@ jobs:
           dotnet build src/CupriNet.Nodestar/CupriNet.Nodestar.csproj -c Release --no-restore
           dotnet build src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj -c Release --no-restore
           dotnet build node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release --no-restore
+
+  # A prerelease GitHub Release on a v* tag, carrying the runnable examples and the packages.
+  #
+  # Prerelease is not modesty: nothing here has been consumed by anyone, the deploy story is unfinished (TODO.md),
+  # and the package shape changed recently enough that it should not be treated as settled.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, example, browser, cupriface-boundary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+
+      - name: Zip each example
+        run: |
+          mkdir -p release
+          for dir in downloaded/constellation-*; do
+            [ -d "$dir" ] || continue
+            (cd "$dir" && zip -qr "../../release/$(basename "$dir")-${GITHUB_REF_NAME}.zip" .)
+          done
+          cp downloaded/packages/*.nupkg release/ 2>/dev/null || true
+          ls -la release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: release/*
+          generate_release_notes: true
+          body: |
+            **Prerelease.** Working end to end, not yet consumable — see [TODO.md](TODO.md).
+
+            The `constellation-*` zips are self-contained: unzip and run, no .NET install needed. They serve the
+            example site over plain HTTP (Mode 2), which works everywhere. Start it, open the address it prints, and
+            if something goes wrong the console output is the useful thing to send back.

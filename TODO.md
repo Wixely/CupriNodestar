@@ -45,9 +45,12 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Infrastructure
 
-- [ ] **CI has never run.** There is no git remote: `.github/workflows/build.yml` is validated for YAML syntax and
-      nothing else. The wasm workload install, the `playwright.ps1` path, and cross-repo feed authentication are all
-      unverified.
+- [ ] **CI has never run.** There is no git remote, so `.github/workflows/build.yml` is validated for YAML syntax and
+      nothing else. See [PUSHING.md](PUSHING.md) for the setup and the list of things most likely to fail first
+      (feed authentication, the wasm workload on a runner, the `playwright.ps1` path).
+- [ ] **The packages have never been consumed as packages.** Every reference in this repository is a
+      `ProjectReference`; nobody has restored `CupriNet.Nodestar` from a feed and built against it. A missing
+      transitive dependency would look exactly like today: green tests, working demo, broken for everyone else.
 
 ## Upstream
 

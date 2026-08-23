@@ -22,8 +22,19 @@
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->
+  <!--
+    PRERELEASE. Nothing here has been consumed by anyone yet, the deploy story is unfinished (see TODO.md), and the
+    packaging was restructured recently enough that a consumer-facing shape should not be treated as settled.
+
+    CI overrides Version with `-p:Version=` so every build carries its run number: 0.1.0-alpha.47 rather than a
+    hundred artifacts all called 0.1.0-alpha. That matters for the thing these builds exist to support — somebody
+    downloading an example, hitting a problem, and sending back a log. Without a distinguishable version, the first
+    question is always "which build?", and the answer is usually "I don't know".
+  -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">alpha</VersionSuffix>
+    <Version Condition="'$(Version)' == ''">$(VersionPrefix)-$(VersionSuffix)</Version>
     <Authors>Wixely</Authors>
     <Company>Wixely</Company>
     <Product>Nodestar</Product>
