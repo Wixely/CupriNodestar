@@ -72,19 +72,11 @@ jobs:
       - name: Test the samples
         run: dotnet test samples/Samples.slnx -c Release --no-build --logger "trx;LogFileName=samples.trx" --results-directory artifacts/test-results
 
-      - name: Pack
-        run: dotnet pack Nodestar.slnx -c Release --no-build -p:Version=$env:VERSION -o artifacts/nuget
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
           path: artifacts/test-results
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packages
-          path: artifacts/nuget
 
   # Something a person can download, unzip and run — which is the point of these builds. Mode 2 (the site served
   # over plain HTTP) needs no browser client and no wasm toolchain, so it is the example that works everywhere and
@@ -233,6 +225,87 @@ jobs:
           name: browser-client
           path: clients/web/bin/Release/net10.0/browser-wasm/publish
 
+  # Packing lives HERE rather than in `build`, and the reason is a defect that shipped in v0.1.0-alpha.1.
+  #
+  # CupriNet.Nodestar.Client.CupriFace exists to carry the wasm bundle as an embedded resource. The bundle is a
+  # BUILD OUTPUT: the directory is gitignored, so a clean checkout has nothing in it, and it is the `browser` job
+  # that produces it. `build` runs BESIDE `browser`, never sees it, and packed a client package with no client —
+  # 5.9 KB against the 5.4 MB it should be. Nothing failed: the pack succeeded, the release published, and the one
+  # package whose entire purpose is to carry a client carried none.
+  #
+  # So this job waits for the bundle, and then refuses to hand over a package that does not contain it.
+  pack:
+    needs: browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Authenticate the Wixely feed
+        shell: bash
+        run: |
+          dotnet nuget update source GitHub-Wixely-Packages             --username "${{ github.actor }}"             --password "${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}"             --store-password-in-clear-text
+
+      - name: Resolve the version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.1.0-alpha.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "packing version $version"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: browser-client
+          path: src/CupriNet.Nodestar.Client.CupriFace/client
+
+      - name: Assert the client bundle actually arrived
+        shell: bash
+        run: |
+          dir=src/CupriNet.Nodestar.Client.CupriFace/client
+          for required in dotnet.native.wasm dotnet.js index.html; do
+            if [ ! -f "$dir/$required" ]; then
+              echo "::error::$required is missing from $dir — the packed client would carry no client."
+              ls -laR "$dir" || echo "(the directory does not exist)"
+              exit 1
+            fi
+          done
+
+      # Staged, THEN built: the bundle is an embedded resource, so building before staging embeds the previous one.
+      - name: Build and pack
+        shell: bash
+        run: |
+          dotnet build Nodestar.slnx -c Release -p:Version="$VERSION"
+          dotnet pack Nodestar.slnx -c Release --no-build -p:Version="$VERSION" -o artifacts/nuget
+
+      # The guard that would have caught alpha.1. A size floor rather than a file listing because it is the one
+      # check that cannot be satisfied by an empty directory, a renamed asset, or a glob that matched nothing.
+      - name: Assert the client package actually contains the client
+        shell: bash
+        run: |
+          pkg=$(ls artifacts/nuget/CupriNet.Nodestar.Client.CupriFace.*.nupkg 2>/dev/null | head -1)
+          [ -n "$pkg" ] || { echo "::error::the client package was not produced at all"; exit 1; }
+          size=$(stat -c%s "$pkg")
+          echo "client package: $pkg ($size bytes)"
+          if [ "$size" -lt 1000000 ]; then
+            echo "::error::$pkg is only $size bytes — the wasm bundle is not embedded in it."
+            echo "It should be several megabytes. A package this small is the empty-client failure that shipped in"
+            echo "v0.1.0-alpha.1: everything succeeds and the one package meant to carry a client carries none."
+            unzip -l "$pkg" || true
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/nuget
+
   # The CupriFace boundary, enforced rather than asserted.
   #
   # PackagingBoundaryTests checks that no project under src/ or node/ REFERENCES CupriFace. This is the stronger
@@ -291,7 +364,7 @@ jobs:
   # and the package shape changed recently enough that it should not be treated as settled.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, example, browser, cupriface-boundary]
+    needs: [build, pack, example, browser, cupriface-boundary]
     runs-on: ubuntu-latest
     permissions:
       contents: write
