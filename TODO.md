@@ -23,10 +23,18 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Packaging
 
-- [ ] **Publish the packages.** CI now **packs** them on every run and uploads them as a build artifact, and the
-      `release` job attaches them to a GitHub Release on a `v*` tag. What nothing does is `dotnet nuget push`, so
-      they still are not restorable from a feed — a consumer would have to download a `.nupkg` by hand. That is the
-      remaining step, and it is what gates the template and the Mode-1 image.
+- [ ] **Publish the packages — to GitHub Packages, not nuget.org.** Decided: `https://nuget.pkg.github.com/Wixely`,
+      the same feed `nuget.config` already restores `CupriNet.*`, `CupriWebRTC` and `CupriFace` from. So consumption
+      is already pointed at the right place; only publication is missing.
+
+      CI **packs** on every run and uploads the `.nupkg`s as a build artifact, and the `release` job attaches them to
+      a GitHub Release on a `v*` tag. What nothing does is `dotnet nuget push`, so they are not restorable from the
+      feed — a consumer would have to download a file by hand. Run #1 established that the automatic `GITHUB_TOKEN`
+      can read the Wixely feed; publishing additionally needs `packages: write`, which the `release` job already
+      declares.
+
+      This is the step that gates the `dotnet new` template, the Mode-1 image, and finding out whether the packages
+      work as packages at all.
 - [ ] **`dotnet new nodestar-site` template.** The design's headline promise — "zero → running site in one
       `dotnet new` + one `dotnet run`" — and the single largest gap between what the README says and what exists.
 
