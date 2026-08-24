@@ -46,7 +46,7 @@ gh run view --log-failed
 | `build` | Both solutions compile; both test suites pass. Packs the prerelease packages. |
 | `browser` | Mode 1 works in real Chromium — dial, Pilgrimage, fetch, render, live update. |
 | `example` | Produces the download people can actually run. |
-| `cupriface-boundary` | The node and transport carry no UI runtime, enforced rather than claimed. |
+| `cupriface-boundary` | The node, both transports and the reference host carry no UI runtime, enforced rather than claimed. |
 | `release` | On a `v*` tag: a **prerelease** GitHub Release with the examples and packages. |
 
 ## What to expect to go wrong

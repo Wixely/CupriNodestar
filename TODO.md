@@ -12,6 +12,10 @@ system, while this one is honest about what a clone actually gets today.
       themselves** — base images, the BuildKit secret mount, the non-root user, the volume.
 - [ ] **Build the image once** and correct whatever the above missed.
 - [ ] **`docker-compose`** — clearnet and onion. The onion variant is now buildable (Tor is wired); it has never run.
+- [ ] **Mode 1 from the container is unverified.** The reference host now serves a browser client from `ClientRoot`,
+      and that path is proven outside a container — a bundle in the directory, a real browser, dial through to paint.
+      What no one has tried is the container itself: the `/client` bind mount, the `app` user's read access to it,
+      and whether inbound UDP reaches the container at all in a given deployment.
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
 - [ ] **A Mode-1 image.** Needs the wasm bundle, which is a build output a fresh clone does not have. The intended
       answer is restoring `CupriNet.Nodestar.Client.CupriFace` from the feed rather than carrying the Emscripten

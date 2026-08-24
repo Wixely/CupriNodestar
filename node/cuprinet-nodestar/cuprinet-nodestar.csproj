@@ -15,9 +15,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
-    <!-- The onion face, so EnableTor/TorOnly in appsettings.json are settings rather than decoration. Referenced
-         always, invoked only when configured: the embedded Tor client costs disk in the image, but a turnkey host
-         whose advertised flags do nothing costs more. -->
+
+    <!-- The two optional transports. Referenced always, invoked only when configured: each costs disk in the image,
+         but a turnkey host whose advertised flags do nothing costs more. That was the state of both until now —
+         EnableWebRtc and EnableTor sat in appsettings.json with no implementation to honour them.
+
+         NEITHER carries a UI runtime, which is what keeps this host inside the CupriFace boundary the
+         cupriface-boundary CI job enforces. The browser client is supplied as FILES via ClientRoot, not as a
+         package reference, precisely so that stays true. -->
+    <ProjectReference Include="..\..\src\CupriNet.Nodestar.WebRtc\CupriNet.Nodestar.WebRtc.csproj" />
     <ProjectReference Include="..\..\src\CupriNet.Nodestar.Tor\CupriNet.Nodestar.Tor.csproj" />
   </ItemGroup>
 

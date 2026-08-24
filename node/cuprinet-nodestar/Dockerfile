@@ -3,11 +3,14 @@
 # Build from the REPOSITORY ROOT, so the project references under src/ are in the context:
 #   docker build -f node/cuprinet-nodestar/Dockerfile -t cuprinet-nodestar .
 #
-# SCOPE: this image is the reference host, which is Mode 2 — the site is rendered server-side and served over plain
-# HTTP. That is the configuration that works in every deployment row, including the two that cannot carry inbound
-# WebRTC at all (a Cloudflare tunnel, and Tor). It serves no browser client and therefore needs no wasm toolchain,
-# which is what keeps this image small and its build ordinary. A Mode-1 image is a separate, heavier thing — see the
-# note at the bottom.
+# SCOPE: this image ships Mode 2 working out of the box — the site rendered server-side and served over plain HTTP,
+# the configuration that works in every deployment row including the two that cannot carry inbound WebRTC at all (a
+# Cloudflare tunnel, and Tor).
+#
+# It also has the WebRTC transport and the onion transport compiled in, so EnableWebRtc and EnableTor are real
+# settings rather than decoration. What it does NOT bake in is a browser client: no wasm toolchain runs here, which
+# is what keeps the build ordinary and the image small. Mount a client bundle at /client and Mode 1 works too — see
+# the note at the bottom.
 
 # ---- build ----
 # Pinned to BUILDPLATFORM so a multi-arch build does not emulate the whole SDK under QEMU. `dotnet publish` here
@@ -52,7 +55,14 @@ ENV CUPRINET_NODESTAR_DataDirectory=/data
 # What the site serves. Mount your own over it: `-v ./my-site:/site:ro`.
 ENV CUPRINET_NODESTAR_SiteRoot=/site
 
-RUN mkdir -p /data /site && chown app:app /data /site
+# The browser client, if you want Mode 1. Empty by default, and an empty directory means /_nodestar/app is simply not
+# served — the node is still dialable by a client the visitor already has. Mount a bundle over it to serve one:
+#   -v ./client:/client:ro
+# Any client speaking the CupriNet client protocol works; the one from a Nodestar release unzips straight in. It is a
+# mount rather than a build step so this image never carries a UI runtime it might not be asked to use.
+ENV CUPRINET_NODESTAR_ClientRoot=/client
+
+RUN mkdir -p /data /site /client && chown app:app /data /site /client
 USER app
 VOLUME ["/data"]
 
@@ -73,11 +83,21 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 
 # ---- what this image deliberately does NOT do ----
 #
-# Serve the browser client (Mode 1). That needs the published wasm bundle staged into
-# CupriNet.Nodestar.Client.CupriFace before build, and a fresh clone does not have it — the bundle is a build output,
-# not a source file. Doing it properly means either a first stage carrying the wasm workload and Emscripten (a very
-# large image for a step most deployments do not need) or restoring the client from the published package once it
-# exists on the feed. The latter is the intended answer, and it is why the bundle is embedded in a package at all.
+# BUILD a browser client. The wasm bundle is a build output, not a source file, so a fresh clone does not have one,
+# and producing it here would mean a first stage carrying the wasm workload and Emscripten — a very large image for a
+# step most deployments do not need. Mounting a bundle at /client is the answer instead, and it has the better
+# property anyway: the client stays swappable, and this image never carries a renderer it was not asked to run.
 #
-# Tor. CUPRINET_NODESTAR_EnableTor is honoured by the options but the onion transport is not wired into
-# NodestarApplication yet, so setting it does nothing today.
+# ---- what has NOT been verified ----
+#
+# THIS IMAGE HAS NEVER BEEN BUILT. There is no Docker on the development machine and no CI job builds it, so every
+# line above is reasoned rather than observed. Treat a first build as a first test.
+#
+# Tor is compiled in and wired (CUPRINET_NODESTAR_EnableTor / _TorOnly reach a real onion transport), but no circuit
+# has ever been opened from anywhere in this repository — the development machine has no Tor access. Bootstrapping
+# inside a container is specifically unproven.
+#
+# Mode 1 through a MOUNTED client directory has been verified outside a container — this host binary, a bundle in
+# ClientRoot, and a real browser completing dial → DataChannel → Pilgrimage → Oracle → paint. What that leaves
+# unproven here is the container specifically: the bind mount, the `app` user's read access to it, and inbound UDP
+# reaching the container at all.

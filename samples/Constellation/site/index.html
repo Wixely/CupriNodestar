@@ -85,8 +85,9 @@
     .chart-now { font-family: ui-monospace, monospace; font-size: .95rem; color: var(--accent); font-weight: 700; }
     .chart-unit { color: var(--dim); font-size: .68rem; }
 
-    /* Fixed height and flex, both deliberately. A percentage height on a BLOCK child escapes its parent in
-       CupriFace and swallows the page; inside a fixed-height flex row it resolves correctly. */
+    /* Fixed height and FLEX, both load-bearing. A percentage height on a block child does not resolve against its
+       parent in CupriFace — it escapes and paints over everything below (CupriFace#55). Inside a fixed-height flex
+       row the same percentage resolves correctly, which is what makes the bars below work at all. */
     .plot { display: flex; align-items: flex-end; gap: 1px; height: 3.5rem; }
 
     /* Each column is sized by a bound percentage height. That resolves because .plot is a fixed-height FLEX row —
@@ -95,12 +96,10 @@
        A `transform: scaleY()` would have been the animatable choice, since CupriFace tweens transforms and does not
        tween layout properties. It is unusable here: the engine ignores `transform-origin` and scales about the
        element's CENTRE, so every column grew symmetrically out of the middle and a rising series rendered as a
-       bowtie — which reads as a rendering fault rather than as data (CupriFace#54). These step once a second, not gliding,
-       and that is the honest trade.
-
-       A non-zero flex-basis, not `flex: 1 1 0`: a zero basis collapsed the columns to nothing, and a chart of
-       zero-width bars is indistinguishable from one that failed to bind. */
-    .bar { flex: 1 1 3px; background: var(--accent); border-radius: 1px; }
+       bowtie — which reads as a rendering fault rather than as data (CupriFace#54). These step once a second, not
+       gliding, and that is the honest trade. Layout properties do not animate either (CupriFace#56), so there is no
+       third option. */
+    .bar { flex: 1 1 0; background: var(--accent); border-radius: 1px; }
     .bar.idle { background: var(--line); }
 
     .axis { display: flex; justify-content: space-between; margin-top: .35rem;

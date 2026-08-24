@@ -114,6 +114,13 @@ public sealed class NodestarApplicationBuilder
         return this;
     }
 
+    /// <summary>
+    /// Serves a browser client from a directory on disk — the bring-your-own-client path, taking no dependency on
+    /// any particular renderer. See <see cref="DirectoryClientAssets"/>.
+    /// </summary>
+    public NodestarApplicationBuilder ServeClientFiles(string rootDirectory)
+        => ServeClient(new DirectoryClientAssets(rootDirectory).Get);
+
     /// <summary>The client file lookup, if one was supplied.</summary>
     public Func<string, ClientAsset?>? ClientAssets { get; set; }
 
