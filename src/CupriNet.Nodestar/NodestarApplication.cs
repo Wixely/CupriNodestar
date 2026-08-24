@@ -164,11 +164,46 @@ public sealed class NodestarApplication : IAsyncDisposable
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stopping.Cancel(); };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => stopping.Cancel();
 
-        await StartAsync(stopping.Token).ConfigureAwait(false);
+        // Named handlers, unsubscribed in the finally below, rather than lambdas left attached.
+        //
+        // As anonymous handlers these OUTLIVED the token source they captured: `stopping` is disposed the moment
+        // this method returns, ProcessExit then fires during shutdown and calls Cancel on a disposed object, and the
+        // process ends with an ObjectDisposedException after a completely successful run. Every clean shutdown hit
+        // it — Ctrl+C included — and it went unnoticed because the nodes in testing were killed rather than stopped.
+        // Found by running a host built from the published packages and letting it exit normally.
+        //
+        // Unsubscribing also stops a second RunAsync from stacking another pair onto process-wide events.
+        void Stop()
+        {
+            // The unsubscribe below closes the window this guards, but not atomically: a signal arriving between
+            // dispose and unsubscribe would still land here.
+            try { stopping.Cancel(); } catch (ObjectDisposedException) { }
+        }
 
+        ConsoleCancelEventHandler onCancelKey = (_, e) => { e.Cancel = true; Stop(); };
+        EventHandler onProcessExit = (_, _) => Stop();
+
+        Console.CancelKeyPress += onCancelKey;
+        AppDomain.CurrentDomain.ProcessExit += onProcessExit;
+
+        try
+        {
+            await StartAsync(stopping.Token).ConfigureAwait(false);
+            await RunFrontAsync(stopping.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= onCancelKey;
+            AppDomain.CurrentDomain.ProcessExit -= onProcessExit;
+        }
+
+        _log.LogInformation("Nodestar stopping.");
+    }
+
+    /// <summary>Serves the clearnet front until cancelled, or simply waits when there is no front to serve.</summary>
+    private async Task RunFrontAsync(CancellationToken stopping)
+    {
         try
         {
             if (_options.EnableWebFront)
@@ -182,19 +217,17 @@ public sealed class NodestarApplication : IAsyncDisposable
                 // hosted, and a later multi-Shrine node may change it while the front is running.
                 var gateway = _options.EnableGateway ? new SiteGateway(_site) : null;
                 var front = new NodestarWebFront(links, _options, () => SiteAddress, gateway, _clientAssets, _log);
-                await front.RunAsync(stopping.Token).ConfigureAwait(false);
+                await front.RunAsync(stopping).ConfigureAwait(false);
             }
             else
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, stopping.Token).ConfigureAwait(false);
+                await Task.Delay(Timeout.InfiniteTimeSpan, stopping).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
             // The normal way to stop.
         }
-
-        _log.LogInformation("Nodestar stopping.");
     }
 
     public async ValueTask DisposeAsync()

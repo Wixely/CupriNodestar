@@ -31,9 +31,10 @@ system, while this one is honest about what a clone actually gets today.
       They are no longer attached to the GitHub Release. A `.nupkg` someone has to find and download by hand is not
       how a package is consumed; the release carries the runnable examples, the feed carries the packages.
 
-      **Still unproven:** nobody has restored them FROM the feed and built against one. Every reference in this
-      repository is a `ProjectReference`, so a missing transitive dependency would look exactly like today — green
-      tests, working demo, broken for everyone else.
+      **Proven as of v0.1.0-alpha.2.** A throwaway project restored all four from the feed into an isolated package
+      directory, composed a Nodestar from them (`UseWebRtc` + `UseTor` + `ServeCupriFaceClient`), built, ran, and
+      answered 200 on both `/` and `/_nodestar/app` — so there is no missing transitive dependency and the client
+      package really does carry its bundle. That exercise also found the shutdown bug fixed alongside it.
 - [ ] **`dotnet new nodestar-site` template.** The design's headline promise — "zero → running site in one
       `dotnet new` + one `dotnet run`" — and the single largest gap between what the README says and what exists.
 
@@ -110,9 +111,6 @@ system, while this one is honest about what a clone actually gets today.
       Mode 1 exercised in real Chromium, and runnable examples produced for three RIDs. None of the failures
       [PUSHING.md](PUSHING.md) predicted actually happened; the feed authenticated on the automatic `GITHUB_TOKEN`.
       Roughly 13 minutes end to end.
-- [ ] **The packages have never been consumed as packages.** Every reference in this repository is a
-      `ProjectReference`; nobody has restored `CupriNet.Nodestar` from a feed and built against it. A missing
-      transitive dependency would look exactly like today: green tests, working demo, broken for everyone else.
 
 ## Upstream
 
