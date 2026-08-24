@@ -76,8 +76,54 @@ public sealed class SiteBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(source);
-        _feeds[name] = new DelegateAuspiceSource(source);
+        _feeds[name] = new DelegateAuspiceSource((publisher, cancellationToken) =>
+            EmanateAsync(source, publisher, cancellationToken));
         return this;
+    }
+
+    /// <summary>
+    /// Runs a feed and treats the visitor leaving as the end of the feed, not as a failure.
+    ///
+    /// <para>A feed publishes on its own schedule, so a visitor closing their tab is discovered by a send that
+    /// races the close and throws. That is the most ordinary event in the system — someone stopped reading — and
+    /// left alone it surfaces as a warning with a stack trace for every departure. Logs that shout on ordinary
+    /// events teach operators to stop reading them, which costs more than the noise.</para>
+    ///
+    /// <para>Everything else still propagates, and deliberately: an over-ceiling payload, a bug in a projection, a
+    /// null in a model are all real and all reported. Only the departure is quiet.</para>
+    /// </summary>
+    private static async Task EmanateAsync(
+        Func<IAuspicePublisher, CancellationToken, Task> source,
+        IAuspicePublisher publisher,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await source(publisher, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsDeparture(ex))
+        {
+            // Nothing to report and nothing to do: the other end is gone.
+        }
+    }
+
+    /// <summary>
+    /// Whether an exception means "the peer went away" rather than "something is wrong".
+    ///
+    /// <para>The transport's closed-vessel exception is matched by NAME rather than by type. It lives in a CupriNet
+    /// assembly this package does not reference, and which has changed across versions — importing a type purely to
+    /// write a catch clause would pin the base package to a transport version for no other reason. Matching the name
+    /// costs a string comparison on a path that only runs when a feed has already stopped.</para>
+    /// </summary>
+    private static bool IsDeparture(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException or ObjectDisposedException) return true;
+            if (current.GetType().Name is "VesselClosedException") return true;
+        }
+
+        return false;
     }
 
     /// <remarks>
