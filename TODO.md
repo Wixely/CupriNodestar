@@ -23,9 +23,10 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Packaging
 
-- [ ] **Publish the packages.** `dotnet pack` already produces all three cleanly (base 26 KB, `.WebRtc`, and the
-      client at 5.4 MB — the split doing its job). Nothing pushes them: CI has no pack/push step, and there is no
-      remote to push from.
+- [ ] **Publish the packages.** CI now **packs** them on every run and uploads them as a build artifact, and the
+      `release` job attaches them to a GitHub Release on a `v*` tag. What nothing does is `dotnet nuget push`, so
+      they still are not restorable from a feed — a consumer would have to download a `.nupkg` by hand. That is the
+      remaining step, and it is what gates the template and the Mode-1 image.
 - [ ] **`dotnet new nodestar-site` template.** The design's headline promise — "zero → running site in one
       `dotnet new` + one `dotnet run`" — and the single largest gap between what the README says and what exists.
 
@@ -71,9 +72,11 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Infrastructure
 
-- [ ] **CI has never run.** There is no git remote, so `.github/workflows/build.yml` is validated for YAML syntax and
-      nothing else. See [PUSHING.md](PUSHING.md) for the setup and the list of things most likely to fail first
-      (feed authentication, the wasm workload on a runner, the `playwright.ps1` path).
+- [x] **CI runs, and is green.** Pushed to [Wixely/CupriNodestar](https://github.com/Wixely/CupriNodestar) (private);
+      run #1 passed every job — both solutions built and tested, the CupriFace boundary enforced on a clean runner,
+      Mode 1 exercised in real Chromium, and runnable examples produced for three RIDs. None of the failures
+      [PUSHING.md](PUSHING.md) predicted actually happened; the feed authenticated on the automatic `GITHUB_TOKEN`.
+      Roughly 13 minutes end to end.
 - [ ] **The packages have never been consumed as packages.** Every reference in this repository is a
       `ProjectReference`; nobody has restored `CupriNet.Nodestar` from a feed and built against it. A missing
       transitive dependency would look exactly like today: green tests, working demo, broken for everyone else.
