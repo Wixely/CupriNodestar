@@ -68,6 +68,21 @@ system, while this one is honest about what a clone actually gets today.
       That is a much better failure — but nothing in this repository's docs tells someone dropping a large image into
       `l2-wwwroot` that a ceiling exists at all, so they meet it as a surprise rather than a constraint.
 
+- [x] **Mode 2 binds the page before serving it.** A Document-tier page is a template whose `{{ }}` placeholders a
+      Mode-1 client resolves; the gateway used to hand that template straight to a browser, which rendered the braces
+      as literal text. Every Document-tier site was affected, including the onion and tunnel deployments that are
+      Mode 2 by necessity. The gateway now substitutes dotted paths and expands `data-repeat` against the feed
+      snapshot it already had, HTML-escaping every value.
+
+      **Escaping is the security boundary, not tidiness.** In Mode 1 a feed value reaches CupriFace, which has no
+      script engine, so an injected `<script>` is inert. Mode 2 hands the same value to a real browser, which runs
+      it — the identical payload is harmless on one path and script injection on the other.
+
+      Deliberately a subset: dotted paths and `data-repeat`, which is the whole surface the tier uses. It is not a
+      template language and should not become one. Not CupriFace either — the server carries no UI runtime, and
+      CupriFace offers no way to hand back a bound document (`BuildAriaHtml` emits landmarks and drops the content),
+      so there was nothing to reuse even at the cost of the dependency.
+
 ## Client
 
 - [ ] **A site cannot declare its feed name.** The client attends `"overlay"` and nothing else, so every

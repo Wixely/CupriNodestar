@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json.Nodes;
 using CupriNet.Rites;
 using Microsoft.AspNetCore.Http;
 
@@ -48,6 +50,8 @@ internal sealed class SiteGateway(SiteBuilder site)
             .HandleAsync(OracleRequest.Get(path), context.RequestAborted)
             .ConfigureAwait(false);
 
+        var body = await RenderAsync(response, context.RequestAborted).ConfigureAwait(false);
+
         context.Response.StatusCode = (int)response.Status;
         if (response.ContentType is { Length: > 0 } contentType)
             context.Response.ContentType = contentType;
@@ -59,11 +63,56 @@ internal sealed class SiteGateway(SiteBuilder site)
 
         if (method == "HEAD")
         {
-            context.Response.ContentLength = response.Body.Length;
+            // The BOUND length, not the template's: a HEAD that promises a different size than the GET delivers is
+            // its own bug, and binding changes the length in both directions.
+            context.Response.ContentLength = body.Length;
             return;
         }
 
-        await context.Response.Body.WriteAsync(response.Body, context.RequestAborted).ConfigureAwait(false);
+        await context.Response.Body.WriteAsync(body, context.RequestAborted).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Binds a Document-tier page against its feed before serving it.
+    ///
+    /// <para>Mode 1 hands the raw template to a client that binds it when the feed arrives. Mode 2 has no client, so
+    /// an unbound page reaches the browser as visible <c>{{ node.site }}</c> braces — styled correctly and plainly
+    /// broken. The gateway is the only place that can close that gap, because it is the only place holding both the
+    /// page and the feed.</para>
+    ///
+    /// <para>The snapshot is fetched ONLY when the page has something to bind. Running a feed source costs a live
+    /// subscription and up to the snapshot timeout, and an ordinary static site should pay neither.</para>
+    /// </summary>
+    private async Task<byte[]> RenderAsync(OracleResponse response, CancellationToken cancellationToken)
+    {
+        if (response.ContentType is not { Length: > 0 } type
+            || !type.Contains("html", StringComparison.OrdinalIgnoreCase)
+            || response.Body.Length == 0)
+        {
+            return response.Body;
+        }
+
+        var html = Encoding.UTF8.GetString(response.Body);
+        if (!SiteTemplate.NeedsBinding(html)) return response.Body;
+
+        // Which feed: the site's first, matching the convention the browser client already follows. A site cannot
+        // yet declare its feed name (see TODO.md), so both ends assume — and they assume the same thing.
+        var name = site.Feeds.Keys.FirstOrDefault();
+        if (name is null) return Encoding.UTF8.GetBytes(SiteTemplate.Bind(html, null));
+
+        JsonNode? model = null;
+        try
+        {
+            var snapshot = await SnapshotAsync(name, cancellationToken).ConfigureAwait(false);
+            if (snapshot is not null) model = JsonNode.Parse(Encoding.UTF8.GetString(snapshot));
+        }
+        catch (Exception)
+        {
+            // A feed that fails or times out must not take the page down with it. Binding against null empties the
+            // placeholders, which still reads as a page rather than as a template.
+        }
+
+        return Encoding.UTF8.GetBytes(SiteTemplate.Bind(html, model));
     }
 
     /// <summary>
