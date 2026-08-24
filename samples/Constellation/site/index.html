@@ -9,13 +9,13 @@
   <style>
     * { box-sizing: border-box; }
 
-    /* Custom properties live on `body`, NOT on `:root`. In CupriFace 0.2.11 a property declared on `:root` or on
-       `html` does not reach descendants — every `var()` referencing one resolves to nothing, and a colour that
-       resolves to nothing paints nothing. This page previously declared them on `:root`, so its entire palette was
-       silently absent: text fell back to default black, backgrounds to transparent, and the effect read as "a plain
-       page" rather than as a bug. Declared here they inherit correctly. Filed upstream as CupriFace#53. */
+    /* Back on `:root` as of CupriFace 0.2.12. Before that a custom property declared here did not reach
+       descendants, every `var()` referencing one resolved to nothing, and this page's entire palette was silently
+       absent — text fell back to black, backgrounds to transparent, and it read as "a plain page" rather than as a
+       bug (CupriFace#53). It was moved to `body` as the workaround; the workaround is no longer needed. */
+    :root { --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff; }
+
     body {
-      --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff;
       margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
       font: 16px/1.55 system-ui, sans-serif;
     }
@@ -85,21 +85,24 @@
     .chart-now { font-family: ui-monospace, monospace; font-size: .95rem; color: var(--accent); font-weight: 700; }
     .chart-unit { color: var(--dim); font-size: .68rem; }
 
-    /* Fixed height and FLEX, both load-bearing. A percentage height on a block child does not resolve against its
-       parent in CupriFace — it escapes and paints over everything below (CupriFace#55). Inside a fixed-height flex
-       row the same percentage resolves correctly, which is what makes the bars below work at all. */
+    /* Fixed height, and flex because a bar chart wants a row of columns anchored to a baseline. (A percentage
+       height on a block child used to escape its parent and paint over everything below — CupriFace#55, fixed in
+       0.2.12. The flex row was never only a workaround, so it stays.) */
     .plot { display: flex; align-items: flex-end; gap: 1px; height: 3.5rem; }
 
-    /* Each column is sized by a bound percentage height. That resolves because .plot is a fixed-height FLEX row —
-       the same percentage on a block child escapes its parent entirely and swallows the page.
+    /* Each column is full height and SCALED, so it glides to its new value rather than snapping: CupriFace tweens
+       transforms and does not tween layout properties (CupriFace#56), which makes a transform the only animated
+       route to a bar chart.
 
-       A `transform: scaleY()` would have been the animatable choice, since CupriFace tweens transforms and does not
-       tween layout properties. It is unusable here: the engine ignores `transform-origin` and scales about the
-       element's CENTRE, so every column grew symmetrically out of the middle and a rising series rendered as a
-       bowtie — which reads as a rendering fault rather than as data (CupriFace#54). These step once a second, not
-       gliding, and that is the honest trade. Layout properties do not animate either (CupriFace#56), so there is no
-       third option. */
-    .bar { flex: 1 1 0; background: var(--accent); border-radius: 1px; }
+       `transform-origin: bottom`, single keyword and not `bottom center`: the pair form is still not parsed as of
+       0.2.12 and silently falls back to centre-scaling, which renders a rising series as a bowtie. The single
+       keyword and the `50% 100%` percentage form both work. This whole approach was unavailable before 0.2.12,
+       when transform-origin was ignored outright (CupriFace#54). */
+    .bar {
+      flex: 1 1 0; height: 3.5rem; background: var(--accent); border-radius: 1px;
+      transform-origin: bottom;
+      transition: transform .9s ease-out;
+    }
     .bar.idle { background: var(--line); }
 
     .axis { display: flex; justify-content: space-between; margin-top: .35rem;
@@ -152,7 +155,7 @@
         <span class="chart-now">{{ current }}</span>
       </div>
       <div class="plot">
-        <div class="bar" data-repeat="bars" style="height: {{ height }}"></div>
+        <div class="bar" data-repeat="bars" style="transform: scaleY({{ scale }})"></div>
       </div>
       <div class="axis"><span>{{ unit }}</span><span>peak {{ peak }}</span></div>
     </div>

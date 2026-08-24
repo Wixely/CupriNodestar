@@ -131,14 +131,14 @@ internal sealed class NodeTelemetry
     /// <summary>
     /// One sparkline, pre-scaled for the view.
     ///
-    /// <para>The bars carry a ready-made <c>height</c> percentage. The markup cannot compute one — there is no script
+    /// <para>The bars carry a ready-made <c>scale</c> of 0–1. The markup cannot compute one — there is no script
     /// engine on the other end — so the node does the arithmetic and sends the result.</para>
     ///
-    /// <para><b>Why a height and not a <c>scaleY</c>.</b> A transform would be the animatable choice: CupriFace tweens
-    /// transforms and does not tween layout properties, so scaled bars would glide between updates where these step.
-    /// It is not available, because CupriFace 0.2.11 ignores <c>transform-origin</c> and scales about the element's
-    /// centre — turning a bar chart into a symmetric bowtie that reads as a rendering fault rather than as data.
-    /// A correct chart that steps once a second beats a smooth one that looks broken. Filed as CupriFace#54.</para>
+    /// <para><b>Why a scale and not a height.</b> CupriFace tweens <c>transform</c> and does not tween layout
+    /// properties, so a scaled bar GLIDES to its new value between feed messages where a bound height would snap.
+    /// This was a bound height until CupriFace 0.2.12: before that the engine ignored <c>transform-origin</c> and
+    /// scaled about the element's centre, turning a rising series into a symmetric bowtie
+    /// (<see href="https://github.com/Wixely/CupriFace/issues/54">CupriFace#54</see>).</para>
     ///
     /// <para>Scaled against the window's own peak, so a flat-but-nonzero series still reads as a line rather than as
     /// nothing. The peak is published so the axis can say what "full height" currently means.</para>
@@ -151,17 +151,13 @@ internal sealed class NodeTelemetry
 
         // Left-pad so a young series grows in from the right rather than stretching across the whole axis.
         for (var i = 0; i < HistoryLength - samples.Length; i++)
-            bars.Add(new JsonObject { ["height"] = "2%", ["idle"] = true });
+            bars.Add(new JsonObject { ["scale"] = 0.02, ["idle"] = true });
 
         foreach (var sample in samples)
         {
             // A visible floor: a real zero should still show a baseline tick, or the chart looks broken rather than quiet.
             var fraction = peak <= 0 ? 0.02 : Math.Max(0.02, sample / peak);
-            bars.Add(new JsonObject
-            {
-                ["height"] = (fraction * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%",
-                ["idle"] = false,
-            });
+            bars.Add(new JsonObject { ["scale"] = Math.Round(fraction, 4), ["idle"] = false });
         }
 
         return new JsonObject

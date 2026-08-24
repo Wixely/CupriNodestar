@@ -25,7 +25,7 @@
   <PropertyGroup>
     <CupriNetVersion>0.3.4</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
-    <CupriFaceVersion>0.2.11</CupriFaceVersion>
+    <CupriFaceVersion>0.2.12</CupriFaceVersion>
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->
