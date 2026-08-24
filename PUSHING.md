@@ -43,11 +43,13 @@ gh run view --log-failed
 
 | Job | What it proves |
 |---|---|
-| `build` | Both solutions compile; both test suites pass. Packs the prerelease packages. |
+| `build` | Both solutions compile; both test suites pass. |
+| `pack` | Packs the prerelease packages, and **refuses one under 1 MB** — the empty-client failure that shipped in v0.1.0-alpha.1. |
 | `browser` | Mode 1 works in real Chromium — dial, Pilgrimage, fetch, render, live update. |
 | `example` | Produces the download people can actually run. |
 | `cupriface-boundary` | The node, both transports and the reference host carry no UI runtime, enforced rather than claimed. |
-| `release` | On a `v*` tag: a **prerelease** GitHub Release with the examples and packages. |
+| `publish` | On a `v*` tag: pushes the packages to **GitHub Packages**. |
+| `release` | On a `v*` tag: a **prerelease** GitHub Release with the runnable examples. Packages are on the feed, not attached here. |
 
 ## What actually happened on the first run
 
@@ -75,8 +77,11 @@ git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
-Packages are versioned `0.1.0-alpha.<run number>` on every build, so two artifacts are never confusable — which
-matters when the whole point is somebody sending back a log and being asked *which build*.
+An ordinary push versions everything `0.1.0-alpha.<run number>`, so two CI artifacts are never confusable — which
+matters when the whole point is somebody sending back a log and being asked *which build*. A **tag** versions from
+the tag instead, so a release and the packages inside it agree.
+
+A tag also publishes those packages to **GitHub Packages**. They are no longer attached to the release itself.
 
 Prerelease is deliberate, not modesty: nothing has been consumed by anyone, the deploy story is unfinished
 (`TODO.md`), and the packaging changed recently enough that its shape should not be treated as settled.
@@ -90,5 +95,7 @@ Prerelease is deliberate, not modesty: nothing has been consumed by anyone, the 
   ever been published and no circuit has ever been opened. **The first person to run with `EnableTor: true` is
   testing it for the first time** — the interesting log lines are the `Tor [nn%]` bootstrap progress and whatever
   `Tor face:` address it prints.
-- **Nothing is published to a feed**, so the packages have never been consumed as packages — every reference in this
-  repository is a `ProjectReference`.
+- **The packages have never been consumed as packages.** They now publish to GitHub Packages on a tag, but nobody
+  has restored one FROM the feed and built against it — every reference in this repository is a `ProjectReference`.
+  A missing transitive dependency would look exactly like today: green tests, working demo, broken for everyone
+  else.

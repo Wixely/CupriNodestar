@@ -362,18 +362,50 @@ jobs:
   #
   # Prerelease is not modesty: nothing here has been consumed by anyone, the deploy story is unfinished (TODO.md),
   # and the package shape changed recently enough that it should not be treated as settled.
+  # Packages go to GitHub Packages, not onto the Release. A .nupkg attached to a release is a file someone has to
+  # find and download by hand; on the feed it is `dotnet add package`. Same artifact, and only one of them is how
+  # anyone actually consumes a library.
+  #
+  # Tags only. Every push to main packs and keeps the result as a build artifact, but publishing one feed version per
+  # commit would bury the versions that mean something under a hundred that do not.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, pack, example, browser, cupriface-boundary]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: packages
+
+      - name: Push to GitHub Packages
+        shell: bash
+        run: |
+          ls -la packages
+          # --no-symbols: pack produces .snupkg alongside each package and GitHub Packages rejects symbol packages,
+          # which fails the push for a package that otherwise uploaded perfectly well.
+          # --skip-duplicate: re-running a tag's workflow must not fail on versions that are already published.
+          dotnet nuget push "packages/*.nupkg"             --source https://nuget.pkg.github.com/Wixely/index.json             --api-key "${{ secrets.GITHUB_TOKEN }}"             --no-symbols             --skip-duplicate
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build, pack, example, browser, cupriface-boundary]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: downloaded
 
+      # The examples only. The packages are on the feed (see the publish job) rather than bolted to the release,
+      # because a .nupkg someone has to download by hand is not how a package is consumed.
       - name: Zip each example
         run: |
           mkdir -p release
@@ -381,7 +413,6 @@ jobs:
             [ -d "$dir" ] || continue
             (cd "$dir" && zip -qr "../../release/$(basename "$dir")-${GITHUB_REF_NAME}.zip" .)
           done
-          cp downloaded/packages/*.nupkg release/ 2>/dev/null || true
           ls -la release
 
       - uses: softprops/action-gh-release@v2
@@ -395,3 +426,16 @@ jobs:
             The `constellation-*` zips are self-contained: unzip and run, no .NET install needed. They serve the
             example site over plain HTTP (Mode 2), which works everywhere. Start it, open the address it prints, and
             if something goes wrong the console output is the useful thing to send back.
+
+            The packages are on **GitHub Packages** rather than attached here — a `.nupkg` you have to download by
+            hand is not how a package is consumed. The version is this tag **without the leading `v`**, so for
+            `${{ github.ref_name }}`:
+
+            ```
+            dotnet nuget add source https://nuget.pkg.github.com/Wixely/index.json \
+              --name Wixely --username <you> --password <a PAT with read:packages> --store-password-in-clear-text
+            dotnet add package CupriNet.Nodestar
+            ```
+
+            `CupriNet.Nodestar` is the base. `.WebRtc` adds the browser on-ramp, `.Tor` the onion face, and
+            `.Client.CupriFace` the browser client itself.

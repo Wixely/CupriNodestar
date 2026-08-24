@@ -23,18 +23,17 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Packaging
 
-- [ ] **Publish the packages — to GitHub Packages, not nuget.org.** Decided: `https://nuget.pkg.github.com/Wixely`,
-      the same feed `nuget.config` already restores `CupriNet.*`, `CupriWebRTC` and `CupriFace` from. So consumption
-      is already pointed at the right place; only publication is missing.
+- [x] **Packages publish to GitHub Packages on a tag.** `https://nuget.pkg.github.com/Wixely` — the same feed
+      `nuget.config` already restores the upstream packages from, so consumption and publication now point at the
+      same place. The `publish` job pushes on `v*` tags only: every push to main still packs and keeps the result as
+      a build artifact, but one feed version per commit would bury the versions that mean something.
 
-      CI **packs** on every run and uploads the `.nupkg`s as a build artifact, and the `release` job attaches them to
-      a GitHub Release on a `v*` tag. What nothing does is `dotnet nuget push`, so they are not restorable from the
-      feed — a consumer would have to download a file by hand. Run #1 established that the automatic `GITHUB_TOKEN`
-      can read the Wixely feed; publishing additionally needs `packages: write`, which the `release` job already
-      declares.
+      They are no longer attached to the GitHub Release. A `.nupkg` someone has to find and download by hand is not
+      how a package is consumed; the release carries the runnable examples, the feed carries the packages.
 
-      This is the step that gates the `dotnet new` template, the Mode-1 image, and finding out whether the packages
-      work as packages at all.
+      **Still unproven:** nobody has restored them FROM the feed and built against one. Every reference in this
+      repository is a `ProjectReference`, so a missing transitive dependency would look exactly like today — green
+      tests, working demo, broken for everyone else.
 - [ ] **`dotnet new nodestar-site` template.** The design's headline promise — "zero → running site in one
       `dotnet new` + one `dotnet run`" — and the single largest gap between what the README says and what exists.
 
