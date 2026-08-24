@@ -7,11 +7,15 @@
        so a page that links its stylesheet costs two. A self-contained document is one consult — and it is what
        CupriFace expects anyway, since it collects <style> elements from the DOM. -->
   <style>
-    :root { --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff; }
-
     * { box-sizing: border-box; }
 
+    /* Custom properties live on `body`, NOT on `:root`. In CupriFace 0.2.11 a property declared on `:root` or on
+       `html` does not reach descendants — every `var()` referencing one resolves to nothing, and a colour that
+       resolves to nothing paints nothing. This page previously declared them on `:root`, so its entire palette was
+       silently absent: text fell back to default black, backgrounds to transparent, and the effect read as "a plain
+       page" rather than as a bug. Declared here they inherit correctly. Filed upstream as CupriFace#53. */
     body {
+      --fg: #16161a; --dim: #6b6b76; --bg: #f7f7f9; --card: #fff; --line: #e4e4ea; --accent: #6d4aff;
       margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
       font: 16px/1.55 system-ui, sans-serif;
     }
@@ -46,6 +50,61 @@
     .meta { color: var(--dim); font-size: .78rem; }
 
     footer { color: var(--dim); font-size: .78rem; margin-top: 2rem; }
+
+    /* ---- Live counters ------------------------------------------------------------------------------------ */
+
+    .stats { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .5rem; }
+    .stat {
+      flex: 1 1 8rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: .6rem .8rem; display: flex; flex-direction: column; gap: .1rem;
+    }
+    .stat .n { font-size: 1.5rem; font-weight: 700; font-family: ui-monospace, monospace; line-height: 1.1; }
+    .stat .l { color: var(--dim); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
+    .stat.you { border-color: var(--accent); }
+    .stat.you .n { color: var(--accent); }
+
+    /* The one continuously-moving element on the page, and it is load-bearing: a feed that has silently stopped
+       looks EXACTLY like a quiet one otherwise. While messages keep arriving this keeps breathing, so "is it still
+       live?" is answerable at a glance rather than by watching a number for ten seconds. */
+    @keyframes breathe { 0% { opacity: .25 } 100% { opacity: 1 } }
+    .pulse {
+      width: .5rem; height: .5rem; border-radius: 50%; background: var(--accent);
+      animation: breathe 1s infinite alternate;
+    }
+    .pulse-row { display: flex; align-items: center; gap: .45rem; }
+
+    /* ---- Sparklines ---------------------------------------------------------------------------------------- */
+
+    .charts { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .chart {
+      flex: 1 1 14rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: .7rem .85rem;
+    }
+    .chart-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .5rem; }
+    .chart-title { font-size: .8rem; font-weight: 600; }
+    .chart-now { font-family: ui-monospace, monospace; font-size: .95rem; color: var(--accent); font-weight: 700; }
+    .chart-unit { color: var(--dim); font-size: .68rem; }
+
+    /* Fixed height and flex, both deliberately. A percentage height on a BLOCK child escapes its parent in
+       CupriFace and swallows the page; inside a fixed-height flex row it resolves correctly. */
+    .plot { display: flex; align-items: flex-end; gap: 1px; height: 3.5rem; }
+
+    /* Each column is sized by a bound percentage height. That resolves because .plot is a fixed-height FLEX row —
+       the same percentage on a block child escapes its parent entirely and swallows the page.
+
+       A `transform: scaleY()` would have been the animatable choice, since CupriFace tweens transforms and does not
+       tween layout properties. It is unusable here: the engine ignores `transform-origin` and scales about the
+       element's CENTRE, so every column grew symmetrically out of the middle and a rising series rendered as a
+       bowtie — which reads as a rendering fault rather than as data (CupriFace#54). These step once a second, not gliding,
+       and that is the honest trade.
+
+       A non-zero flex-basis, not `flex: 1 1 0`: a zero basis collapsed the columns to nothing, and a chart of
+       zero-width bars is indistinguishable from one that failed to bind. */
+    .bar { flex: 1 1 3px; background: var(--accent); border-radius: 1px; }
+    .bar.idle { background: var(--line); }
+
+    .axis { display: flex; justify-content: space-between; margin-top: .35rem;
+            color: var(--dim); font-size: .66rem; font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -70,6 +129,42 @@
     <div class="row"><span class="k">Network</span><span class="v">{{ node.network }}</span></div>
     <div class="row"><span class="k">As of</span><span class="v">{{ generatedAt }}</span></div>
   </section>
+
+  <!--
+    The two figures that answer to YOU. Viewers counts concurrent Auspice emanations, so a second tab makes it read
+    2; pages counts Oracle consults, so navigating moves it. Everything on this page is measured — there is no
+    synthetic series anywhere in this sample, which is why a stalled feed shows as stalled numbers.
+  -->
+  <h2 class="pulse-row"><span class="pulse"></span>Live</h2>
+
+  <div class="stats">
+    <div class="stat you"><span class="n">{{ live.viewers }}</span><span class="l">Watching now</span></div>
+    <div class="stat you"><span class="n">{{ live.oracleRequests }}</span><span class="l">Pages served</span></div>
+    <div class="stat"><span class="n">{{ live.updatesPushed }}</span><span class="l">Updates pushed</span></div>
+    <div class="stat"><span class="n">{{ runtime.uptime }}</span><span class="l">Uptime</span></div>
+  </div>
+
+  <!-- One card per series, instantiated from the feed. The bars carry a pre-computed 0–1 scale because the page has
+       no script engine to divide by a peak with — the node does the arithmetic and sends the result. -->
+  <div class="charts">
+    <div class="chart" data-repeat="charts">
+      <div class="chart-head">
+        <span class="chart-title">{{ label }}</span>
+        <span class="chart-now">{{ current }}</span>
+      </div>
+      <div class="plot">
+        <div class="bar" data-repeat="bars" style="height: {{ height }}"></div>
+      </div>
+      <div class="axis"><span>{{ unit }}</span><span>peak {{ peak }}</span></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span class="n">{{ runtime.cpuPercent }}</span><span class="l">CPU % of a core</span></div>
+    <div class="stat"><span class="n">{{ runtime.workingSetMb }}</span><span class="l">Working set MB</span></div>
+    <div class="stat"><span class="n">{{ runtime.threads }}</span><span class="l">Threads</span></div>
+    <div class="stat"><span class="n">{{ runtime.gen0 }}</span><span class="l">Gen-0 collections</span></div>
+  </div>
 
   <h2>Peers <span class="count">{{ shown }} of {{ total }}</span></h2>
 

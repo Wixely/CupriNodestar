@@ -11,6 +11,36 @@ page — arriving over the very connection being visualised.
 It ships **no compiled UI and references no CupriFace**: HTML, CSS, and a live feed, served over L2. Rendering is the
 client's job. That is the claim the sample exists to make.
 
+## What is on the page
+
+Everything is **measured**. There is no synthetic series anywhere in this sample, and that is the point: a sine wave
+would animate just as prettily and prove nothing, whereas a stalled feed here shows up as stalled numbers.
+
+Two figures answer to **you**, and they are the ones to watch:
+
+| Figure | What it is | What moves it |
+|---|---|---|
+| **Watching now** | Concurrent Auspice emanations. The rite starts one per attending session. | Open a second tab — it reads 2. |
+| **Pages served** | Oracle consults answered for this site. | Navigate or revisit — it climbs. |
+
+The rest is process-level truth from the runtime: uptime, CPU as a percentage of one core (so >100 is legitimate on a
+multi-core box), working set, thread count, gen-0 collections, and three rolling 32-sample sparklines — **CPU**,
+**allocation rate**, and this feed's **own output in bytes/sec**.
+
+Then `Peers`, which is the L1 overlay map and the redaction boundary the sample's tests pin.
+
+> **Why no per-rite traffic chart.** Bytes/sec split across Oracle, Auspice and Conduit would be the obvious headline.
+> `CupriNode` exposes no such counters, so there is no honest way to report them — the feed's own output is counted
+> instead, because that is a number this sample genuinely owns. Inventing the rest and labelling it "traffic" would
+> have been easy and would have been a lie.
+
+> **Why the charts step rather than glide.** CupriFace tweens `transform` but not layout properties, so a *gliding*
+> bar needs `scaleY` — and the engine ignores `transform-origin`, scaling about the element's centre, which turns a
+> rising series into a symmetric bowtie ([CupriFace#54](https://github.com/Wixely/CupriFace/issues/54)). A correct
+> chart that steps once a second beats a smooth one that looks broken. The breathing dot beside **Live** is the
+> continuously-animated element, and it is load-bearing: a feed that has silently died otherwise looks exactly like
+> a quiet one.
+
 ## The demo, from VS Code
 
 **Run → "Demo: two nodes + browser"**. That builds the client, stages it, starts two independent nodes, and opens the

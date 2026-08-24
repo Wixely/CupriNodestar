@@ -80,6 +80,24 @@ internal static unsafe partial class BrowserRenderer
         Paint();
     }
 
+    /// <summary>
+    /// Advances the document's animation clock and repaints if anything moved. Called once per frame from the pump.
+    ///
+    /// <para>Without this, CSS animations and transitions never run: the engine does not animate on its own, it
+    /// animates when a host tells it what time it is. A site whose markup declares <c>@keyframes</c> would render
+    /// its first frame and then sit frozen — which is worse than having no animation, because a page that looks
+    /// alive and is not is exactly how a stalled feed disguises itself.</para>
+    ///
+    /// <para>The repaint is conditional on the engine's own answer rather than unconditional. A full document
+    /// repaint at 60 Hz on a phone is real battery for nothing when the page is static, and the common case for a
+    /// document-tier site <i>is</i> static — so an idle page costs one cheap call per frame and no pixels.</para>
+    /// </summary>
+    public static void Animate(double seconds)
+    {
+        if (_document is null) return;
+        if (_document.Animate(seconds)) Paint();
+    }
+
     /// <summary>Renders the current document to the canvas at its present size.</summary>
     public static void Paint()
     {

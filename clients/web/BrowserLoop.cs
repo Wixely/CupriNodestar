@@ -44,7 +44,23 @@ internal static class BrowserLoop
                 Console.WriteLine($"[cupri] continuation faulted: {ex.GetType().Name}: {ex.Message}");
             }
         }
+
+        // The frame's other job: give the renderer a clock. CupriFace advances animations only when told the time,
+        // so without this every @keyframes and every transition renders one frame and freezes.
+        //
+        // A monotonic clock, not wall time: Stopwatch cannot jump backwards over an NTP correction or a DST change,
+        // and an animation clock that goes backwards makes the engine's elapsed-time arithmetic negative.
+        try
+        {
+            BrowserRenderer.Animate(Clock.Elapsed.TotalSeconds);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[cupri] animation faulted: {ex.GetType().Name}: {ex.Message}");
+        }
     }
+
+    private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
 
     /// <summary>Awaits the next frame. The replacement for <c>Task.Delay</c>, which has no timer to run on here.</summary>
     public static Task NextFrameAsync()

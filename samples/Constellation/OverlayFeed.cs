@@ -23,7 +23,8 @@ namespace Constellation;
 /// The node is resolved lazily. A feed has to be registered before the application starts, but the node it reports
 /// on does not exist until after — and since the delegate only runs once a visitor attends, by then it does.
 /// </remarks>
-internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<string?> siteAddress)
+internal sealed class OverlayFeed(
+    Func<CupriNode> node, string network, Func<string?> siteAddress, NodeTelemetry telemetry)
 {
     /// <summary>
     /// How many peers a message carries. An Auspice message is capped at 192 KiB and a Constellation holds up to
@@ -32,44 +33,54 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
     /// </summary>
     private const int MaxPeersPublished = 64;
 
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+    /// <summary>
+    /// One second, and it now ticks on every one of them.
+    ///
+    /// <para>This used to poll every two seconds and <b>suppress the send unless the peer set had changed</b>, which
+    /// was right when the payload was only the Constellation: an idle node stayed quiet. It is wrong now. The payload
+    /// carries live telemetry, so it differs on essentially every tick and the comparison would never once suppress
+    /// anything — it would just be dead code claiming a property the feed no longer has.</para>
+    ///
+    /// <para>The cost is honest and worth naming: this node now emits about one message per second per viewer
+    /// whether or not anything interesting happened, where before an idle node emitted nothing at all. That is a
+    /// deliberate trade for a demo whose entire job is to show a live stream — a real deployment publishing rarely-
+    /// changing data should keep the old suppression.</para>
+    /// </summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
     public async Task EmanateAsync(IAuspicePublisher publisher, CancellationToken cancellationToken)
     {
+        // Counted for the duration of this session's emanation, which is what makes "viewers" real: the rite starts
+        // one of these per attending browser, so the count is the number of people actually watching right now.
+        using var viewer = telemetry.EnterViewer();
+
         // Snapshot first: a viewer attending a feed already in progress has no state, so the opening message is what
         // stops the view being connected-but-empty.
-        var previous = Project();
-        await publisher.SnapshotAsync(Encode(previous), cancellationToken).ConfigureAwait(false);
+        await PublishAsync(publisher, snapshot: true, cancellationToken).ConfigureAwait(false);
 
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
-
-            // The Constellation exposes state, not change events, so this re-projects and compares. Sending only on
-            // a real change keeps an idle node quiet — and a feed that ticks regardless of content is a feed whose
-            // timing leaks nothing but also says nothing.
-            var current = Project();
-            // Compared WITHOUT generatedAt, which changes on every projection by definition: comparing the full
-            // payload made this always-unequal, and an idle node ticked every poll. Found live in a browser session.
-            if (Comparable(current) == Comparable(previous)) continue;
-
-            await publisher.UpdateAsync(Encode(current), cancellationToken).ConfigureAwait(false);
-            previous = current;
+            await PublishAsync(publisher, snapshot: false, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task PublishAsync(IAuspicePublisher publisher, bool snapshot, CancellationToken cancellationToken)
+    {
+        var message = Encode(Project());
+
+        // Counted before the send, so the figure includes the message reporting it. The alternative always reads one
+        // behind and invites exactly the "why is this off by one" question a demo does not need.
+        telemetry.CountPush(message.Length);
+
+        if (snapshot) await publisher.SnapshotAsync(message, cancellationToken).ConfigureAwait(false);
+        else await publisher.UpdateAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Serves the same projection to the Mode-2 gateway, so an HTTP visitor sees the snapshot too.</summary>
     public byte[] SnapshotBytes() => Encode(Project());
 
     private static byte[] Encode(JsonNode payload) => Encoding.UTF8.GetBytes(payload.ToJsonString());
-
-    /// <summary>The projection minus its timestamp, for change detection only.</summary>
-    private static string Comparable(JsonNode payload)
-    {
-        var copy = JsonNode.Parse(payload.ToJsonString())!.AsObject();
-        copy.Remove("generatedAt");
-        return copy.ToJsonString();
-    }
 
     /// <summary>
     /// Projects the Constellation into something safe to hand an anonymous visitor.
@@ -89,10 +100,20 @@ internal sealed class OverlayFeed(Func<CupriNode> node, string network, Func<str
     /// <para>The rule of thumb: <i>if the control plane wouldn't serve it to a peer, don't push it to an anonymous
     /// visitor.</i></para>
     /// </summary>
+    /// <remarks>
+    /// The telemetry is merged in here rather than inside the static projection below, and deliberately: that method
+    /// is the redaction boundary and the thing the sample's tests pin, so it stays a pure function of the
+    /// Constellation. Process counters are not peer data and have no business inside it.
+    /// </remarks>
     private JsonNode Project()
     {
         var current = node();
-        return Project(current.Constellation, current.Identity.Sigil, network, siteAddress());
+        var payload = Project(current.Constellation, current.Identity.Sigil, network, siteAddress()).AsObject();
+
+        foreach (var section in telemetry.Sample())
+            payload[section.Key] = section.Value?.DeepClone();
+
+        return payload;
     }
 
     /// <inheritdoc cref="Project()"/>
