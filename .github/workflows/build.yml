@@ -93,6 +93,29 @@ jobs:
           name: browser-client
           path: src/CupriNet.Nodestar.Client.CupriFace/client
 
+      # The green-but-empty guard, and the reason this job has `needs: browser` at all.
+      #
+      # The bundle is an EMBEDDED RESOURCE behind a glob. If the artifact failed to arrive, or landed a directory
+      # deeper than expected, the glob simply matches nothing: the publish below still succeeds, the zip still
+      # builds, and the example ships with no client — /_nodestar/app 404s while every job reports success. The
+      # failure this job exists to prevent would survive as a pass, which is the worst shape a CI result can take.
+      #
+      # dotnet.native.wasm specifically: it is the one file that cannot be produced by anything except a real wasm
+      # publish, so its presence rules out a partial or stale staging as well as an absent one.
+      - name: Assert the client bundle actually arrived
+        shell: bash
+        run: |
+          dir=src/CupriNet.Nodestar.Client.CupriFace/client
+          for required in dotnet.native.wasm dotnet.js index.html; do
+            if [ ! -f "$dir/$required" ]; then
+              echo "::error::$required is missing from $dir — the browser-client artifact did not arrive intact."
+              echo "Without it the example publishes cleanly and ships with no client at all."
+              ls -laR "$dir" || echo "(the directory does not exist)"
+              exit 1
+            fi
+          done
+          echo "client bundle present: $(ls -1 "$dir" | wc -l) files, $(du -sh "$dir" | cut -f1)"
+
       # Self-contained: no .NET install required to try it. That matters for "download this and tell me what happens" —
       # a runtime prerequisite is the step where most people stop.
       - name: Publish the Constellation example
