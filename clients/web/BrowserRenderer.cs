@@ -22,6 +22,15 @@ internal static unsafe partial class BrowserRenderer
     private static bool _awaitingFirstBind;
     private static long _bindDeadline;
 
+    /// <summary>
+    /// Whether anything has been drawn for the current document yet, so the FIRST paint can be announced.
+    ///
+    /// <para>Announced because the first paint is no longer a consequence of loading the page — it waits for the feed
+    /// to bind. Anything checking that a site rendered has to be able to observe the moment it did rather than assume
+    /// it followed the fetch, which is precisely the assumption that made the browser gate racy.</para>
+    /// </summary>
+    private static bool _painted;
+
     [LibraryImport("js", EntryPoint = "cupri_present")]
     private static partial void Present(IntPtr rgba, int width, int height);
 
@@ -90,6 +99,7 @@ internal static unsafe partial class BrowserRenderer
         // would otherwise never appear, so once it passes the template is painted as-is — which is exactly the old
         // behaviour, just no longer the common case.
         _awaitingFirstBind = true;
+        _painted = false;
         _bindDeadline = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * 3 / 4);   // 750ms
     }
 
@@ -230,6 +240,14 @@ internal static unsafe partial class BrowserRenderer
             }
 
             Present((IntPtr)buffer, width, height);
+        }
+
+        // Once per document, after pixels have actually reached the canvas. Not on every frame: this runs at display
+        // rate while anything is animating, and a per-frame line would bury everything else the client says.
+        if (!_painted)
+        {
+            _painted = true;
+            Console.WriteLine("[cupri] painted");
         }
     }
 }

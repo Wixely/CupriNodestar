@@ -74,7 +74,14 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
         // 4. The site itself, over L2.
         await ExpectLogAsync("site answered 200");
 
-        // 5. Pixels. This is the assertion the others exist to reach — steps 1-4 have all passed before while the
+        // 5. The paint itself, which is NOT a consequence of step 4 and must not be assumed to follow it. A
+        // Document-tier page is a template: the client deliberately holds its first paint until the feed binds the
+        // {{ }} placeholders, so that a visitor never sees the raw template. Sampling the canvas straight after
+        // "site answered 200" therefore races the feed — it passed on a warm machine and failed on a cold CI runner,
+        // reporting 0/552960 opaque pixels for a client that was working perfectly and simply had not painted yet.
+        await ExpectLogAsync("painted");
+
+        // 6. Pixels. This is the assertion the others exist to reach — steps 1-5 have all passed before while the
         // canvas stayed blank, because fonts were stripped or the background was never cleared.
         var painted = await CanvasAsync();
         Assert.True(painted.Opaque > painted.Total / 2,
