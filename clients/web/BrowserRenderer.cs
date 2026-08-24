@@ -31,6 +31,20 @@ internal static unsafe partial class BrowserRenderer
     [LibraryImport("js", EntryPoint = "cupri_canvas_height")]
     private static partial int CanvasHeight();
 
+    [LibraryImport("js", EntryPoint = "cupri_canvas_scale")]
+    private static partial float CanvasScale();
+
+    /// <summary>
+    /// The size a site is authored for, and the reference hybrid zoom fits against.
+    ///
+    /// <para>A desktop CupriFace app declares this on its <c>CupriApp</c>; an arbitrary L2 site has no way to say
+    /// it, so the client has to assume one. 1024×768 is the assumption — wide enough that a page laid out for a
+    /// normal window is not scaled up, tall enough that fitting the height is a meaningful constraint rather than a
+    /// permanent shrink. A site declaring its own would be better, and is worth a convention later.</para>
+    /// </summary>
+    private const float DesignWidth = 1024f;
+    private const float DesignHeight = 768f;
+
     /// <summary>
     /// Loads the fetched document and paints it once.
     ///
@@ -176,7 +190,31 @@ internal static unsafe partial class BrowserRenderer
         // so in its own CSS and paints over this.
         surface.Canvas.Clear(SKColors.White);
 
-        _document.Render(surface.Canvas, width, height);
+        // HYBRID ZOOM, the same policy CupriFace's own Showcase calls by that name: fit the tighter axis and let the
+        // longer one reflow. The document is laid out at a LOGICAL size and drawn at a scale, rather than laid out
+        // at whatever pixel size the canvas happens to be.
+        //
+        // Two things are folded into one scale here, and both matter:
+        //
+        //   devicePixelRatio — without it the document lays out in DEVICE pixels, so on a 2x display a page reflows
+        //   as though the window were twice as wide and every glyph ends up half its intended physical size. It has
+        //   been wrong since the client was written and stayed invisible because headless Chromium reports 1.
+        //
+        //   the zoom itself — min(cssWidth/DesignWidth, cssHeight/DesignHeight), so a viewport smaller than the
+        //   design size scales the page down to fit instead of clipping it, and a larger one scales it up.
+        var density = CanvasScale();
+        if (density <= 0) density = 1f;
+
+        var cssWidth = width / density;
+        var cssHeight = height / density;
+        var zoom = Math.Clamp(Math.Min(cssWidth / DesignWidth, cssHeight / DesignHeight), 0.25f, 4f);
+
+        var present = density * zoom;
+        surface.Canvas.Scale(present);
+
+        // Render in LOGICAL units. Skia maps them onto the device pixels above, so text is laid out at the size the
+        // author meant and still painted at the display's real resolution.
+        _document.Render(surface.Canvas, width / present, height / present);
         surface.Canvas.Flush();
 
         using var image = surface.Snapshot();

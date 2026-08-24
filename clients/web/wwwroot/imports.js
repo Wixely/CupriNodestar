@@ -221,6 +221,17 @@ mergeInto(LibraryManager.library, {
     canvas.getContext('2d').putImageData(new ImageData(view, w, h), 0, 0);
   },
 
+  // The device-pixel ratio actually in force, derived from the canvas rather than read from the window: it is the
+  // ratio the buffer was BUILT with, so it stays correct even between a monitor change and the next resize pass.
+  // Returned as the real number of device pixels per CSS pixel, which is what the renderer needs to lay a document
+  // out in CSS pixels and then draw it at native resolution.
+  cupri_canvas_scale__deps: ['$cupri'],
+  cupri_canvas_scale: function () {
+    const c = globalThis.__cupri && globalThis.__cupri.canvas;
+    if (!c || !c.clientWidth) return 1;
+    return c.width / c.clientWidth;
+  },
+
   cupri_canvas_width__deps: ['$cupri'],
   cupri_canvas_width: function () {
     const c = globalThis.__cupri && globalThis.__cupri.canvas;
