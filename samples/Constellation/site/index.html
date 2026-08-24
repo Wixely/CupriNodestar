@@ -36,9 +36,9 @@
     .v { font-size: .88rem; word-break: break-all; font-family: ui-monospace, monospace; }
     .accent { color: var(--accent); font-weight: 600; }
 
-    /* Flex rather than `grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr))`. CupriFace supports grid with
-       spans, but not the auto-fill/minmax track function — with it the cards collapsed to a ~30px column and their
-       text spilled out. Flex wrap with a basis is the supported way to say the same thing. */
+    /* Flex wrap with a basis. This was a workaround — `repeat(auto-fill, minmax(15rem, 1fr))` collapsed the cards
+       to a ~30px column (CupriFace#51) — and as of CupriFace 0.3.0 the grid form works, so it is now a preference
+       rather than a necessity. Left as flex because it renders correctly and changing it would be churn. */
     .peers { display: flex; flex-wrap: wrap; gap: .5rem; }
     .peer {
       flex: 1 1 16rem; min-width: 0;
@@ -94,10 +94,10 @@
        transforms and does not tween layout properties (CupriFace#56), which makes a transform the only animated
        route to a bar chart.
 
-       `transform-origin: bottom`, single keyword and not `bottom center`: the pair form is still not parsed as of
-       0.2.12 and silently falls back to centre-scaling, which renders a rising series as a bowtie. The single
-       keyword and the `50% 100%` percentage form both work. This whole approach was unavailable before 0.2.12,
-       when transform-origin was ignored outright (CupriFace#54). */
+       `transform-origin: bottom`, the single keyword. Every form works as of CupriFace 0.3.0; before that the pair
+       form `bottom center` silently fell back to centre-scaling (CupriFace#63) and rendered a rising series as a
+       bowtie, and before 0.2.12 transform-origin was ignored outright (CupriFace#54), which is why these bars
+       bound a height and stepped rather than gliding. */
     .bar {
       flex: 1 1 0; height: 3.5rem; background: var(--accent); border-radius: 1px;
       transform-origin: bottom;

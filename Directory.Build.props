@@ -25,7 +25,11 @@
   <PropertyGroup>
     <CupriNetVersion>0.3.4</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
-    <CupriFaceVersion>0.2.12</CupriFaceVersion>
+    <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
+         properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
+         child (#55), and animating layout properties (#56). Each was re-verified with a headless render probe on
+         the bump rather than taken from the changelog. -->
+    <CupriFaceVersion>0.3.0</CupriFaceVersion>
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->
