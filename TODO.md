@@ -117,6 +117,20 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
+- [ ] **Import CupriFace#54 when it ships: gliding sparklines.** `transform-origin` is fixed on `main` but not yet
+      released, and it is the reason the Constellation charts step once a second rather than tweening — bars had to
+      bind `height` because `scaleY` scaled about the element centre and rendered a rising series as a bowtie. Once
+      a package carries the fix, `transform: scaleY()` + `transform-origin: bottom` + a `transition` gives animated
+      charts, and CupriFace#56 (layout properties do not animate) stops mattering.
+
+      Also fixed and worth a smaller pass: **#53** (`:root` custom properties now inherit — the palette could move
+      back off `body`) and **#55** (percentage height on a block child). Neither changes behaviour here, but the
+      comments in `samples/Constellation/site/index.html` and `NodeTelemetry.cs` assert engine bugs that will no
+      longer exist, and a stale comment claiming a workaround is necessary is worse than none.
+
+      Bump carefully: a renderer bump moves every pixel, so re-verify each fix with a headless render probe and
+      re-run the browser gate rather than trusting the changelog.
+
 - [x] **[CupriNet#1](https://github.com/Wixely/CupriNet/issues/1)** — done, in CupriNet **0.3.3**. `ShrineSession`
       moved to a socket-free `CupriNet.Shrine` package beside a static `Pilgrimage.OverVesselAsync`, with the
       namespace kept and a `TypeForwardedTo` so nothing downstream had to be renamed. `BrowserPilgrim.cs` is deleted:
