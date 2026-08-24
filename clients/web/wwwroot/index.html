@@ -74,9 +74,33 @@
       // The canvas is sized in device pixels here so the engine renders at the display's real resolution rather
       // than being scaled up and blurred. imports.js reads both back through this same bridge.
       const canvas = document.getElementById('viewport');
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(canvas.clientWidth * dpr);
-      canvas.height = Math.round(canvas.clientHeight * dpr);
+
+      // The canvas has TWO sizes: the CSS box it occupies, and the pixel buffer behind it. Setting only the CSS box
+      // leaves the buffer at its original size and the browser stretches it to fit — the picture blurs and the text
+      // smears, which looks like a broken renderer rather than a stale buffer.
+      //
+      // So the buffer is resized to match the box, in real device pixels, and re-matched whenever either changes.
+      // devicePixelRatio is re-read every time rather than captured: dragging a window to a monitor with a different
+      // scale factor changes it without changing the element's CSS size at all.
+      const sizeCanvas = () => {
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+        const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+        // Guarded: assigning width/height CLEARS the canvas even when the value is unchanged, so an unguarded
+        // assignment on every resize event would flash the page blank while dragging.
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      };
+
+      sizeCanvas();
+
+      // ResizeObserver rather than window.onresize: the viewport is sized in vh and by its flex parent, so it can
+      // change without the window doing so. The window listener stays for the monitor-scale case above, which
+      // changes devicePixelRatio while the element's own box stays put.
+      //
+      // Neither one repaints. The wasm module notices the new buffer size on its next frame and redraws itself,
+      // which keeps the resize path identical to every other repaint reason instead of a second way to draw.
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(sizeCanvas).observe(canvas);
+      window.addEventListener('resize', sizeCanvas);
 
       // The bridge into module scope. `pending` is a hand-off the module TAKES (imports.js clears it), so one
       // submit produces exactly one visit however often the module polls.

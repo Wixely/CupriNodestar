@@ -13,6 +13,10 @@ internal static unsafe partial class BrowserRenderer
 {
     private static CupriDocument? _document;
 
+    /// <summary>The canvas size the current pixels were drawn for, so a change can be noticed without a JS callback.</summary>
+    private static int _paintedWidth;
+    private static int _paintedHeight;
+
     [LibraryImport("js", EntryPoint = "cupri_present")]
     private static partial void Present(IntPtr rgba, int width, int height);
 
@@ -95,7 +99,21 @@ internal static unsafe partial class BrowserRenderer
     public static void Animate(double seconds)
     {
         if (_document is null) return;
-        if (_document.Animate(seconds)) Paint();
+
+        // A resize is a repaint reason in its own right, and it is checked here because the frame pump is already
+        // the one thing running every frame — no JS-to-managed signal needed, and no listener that can fire while
+        // the module is still booting.
+        //
+        // Without it the page does not re-render at all when the window changes: the canvas keeps the backing store
+        // it was given at boot and the browser simply SCALES that bitmap to the new element size, so text and charts
+        // stretch and blur. CupriFace itself re-lays-out at whatever size Render is handed — verified by rendering
+        // the same document at two widths and watching the cards rewrap — so this was never an engine limit, only a
+        // host that never told it the size had changed.
+        var width = CanvasWidth();
+        var height = CanvasHeight();
+        var resized = width != _paintedWidth || height != _paintedHeight;
+
+        if (_document.Animate(seconds) || resized) Paint();
     }
 
     /// <summary>Renders the current document to the canvas at its present size.</summary>
@@ -106,6 +124,11 @@ internal static unsafe partial class BrowserRenderer
         var width = CanvasWidth();
         var height = CanvasHeight();
         if (width <= 0 || height <= 0) return;
+
+        // Recorded before the work, not after: a mid-resize failure must not leave this claiming the new size was
+        // painted, or the next frame sees no change and the canvas stays stale until something else moves.
+        _paintedWidth = width;
+        _paintedHeight = height;
 
         // Skia composites in PREMULTIPLIED alpha; the browser's ImageData wants STRAIGHT alpha. Handing premultiplied
         // pixels straight to putImageData is the classic way to get a picture that is subtly, inexplicably wrong on

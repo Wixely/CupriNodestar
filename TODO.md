@@ -66,7 +66,18 @@ system, while this one is honest about what a clone actually gets today.
       Document-tier site must call its feed that. A client that renders whatever site it is pointed at should not
       know any site's feed names — the name wants to come from the site, via a header on the Oracle response or an
       attribute in its markup.
-- [ ] **No resize handling.** The canvas renders at whatever size it had on first paint.
+- [x] **Resize handling.** The canvas's pixel buffer now tracks its CSS box (via `ResizeObserver`, plus a window
+      listener for the monitor-scale case where `devicePixelRatio` changes while the element does not), and the frame
+      pump repaints when it notices a new size. Previously the buffer was sized once at boot and the browser scaled
+      that bitmap to fit, so resizing stretched and blurred the page instead of re-rendering it. CupriFace was never
+      the limit here — it re-lays-out at whatever size `Render` is handed.
+- [ ] **Horizontal overflow at narrow widths.** The layout reflows correctly, but a `cupri1…` address is ~62
+      characters with no break opportunity and nothing can break it: `word-break`, `overflow-wrap` and `word-wrap`
+      are all no-ops in CupriFace 0.2.11 ([CupriFace#59](https://github.com/Wixely/CupriFace/issues/59)). One address
+      forces its container wider than the viewport and clips everything to its right. No workaround found that keeps
+      the address readable.
+- [ ] **The page can be taller than the canvas, and there is no scrolling.** The client gives the site a `60vh`
+      viewport; anything below that — the peer list, on a short window — simply cannot be reached.
 - [ ] **No history.** No back, and links are the only way in — there is no roaming to an address you do not already
       hold a link for.
 
