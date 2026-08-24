@@ -170,8 +170,10 @@ static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
     // <style> elements out of the DOM anyway, so a self-contained document is both cheaper and the natural shape.
     var page = await shrine.ConsultAsync(OracleRequest.Get("/index.html"));
     Console.WriteLine($"[cupri] site answered {page.Status} ({page.Body.Length} bytes, {page.ContentType})");
+    // Loaded, not yet shown: the page is a template until the first feed message binds it, so the renderer holds
+    // the first paint back rather than flashing "{{ node.site }}" at the visitor.
     BrowserRenderer.Show(page.AsText());
-    Console.WriteLine("[cupri] painted");
+    Console.WriteLine("[cupri] document loaded — holding the first paint until the feed binds it");
 
     // The visit ends when the visitor navigates. Watching runs alongside the feed rather than between messages: an
     // idle feed can be silent indefinitely, and an address bar that only responds when data happens to arrive would

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using CupriFace;
@@ -16,6 +17,10 @@ internal static unsafe partial class BrowserRenderer
     /// <summary>The canvas size the current pixels were drawn for, so a change can be noticed without a JS callback.</summary>
     private static int _paintedWidth;
     private static int _paintedHeight;
+
+    /// <summary>Whether a freshly loaded document is still waiting for its first feed message before being shown.</summary>
+    private static bool _awaitingFirstBind;
+    private static long _bindDeadline;
 
     [LibraryImport("js", EntryPoint = "cupri_present")]
     private static partial void Present(IntPtr rgba, int width, int height);
@@ -59,7 +64,19 @@ internal static unsafe partial class BrowserRenderer
             _document.LoadFont(memory.ToArray());
         }
 
-        Paint();
+        // NOT painted here, deliberately.
+        //
+        // A Document-tier page arrives as a TEMPLATE: its live values are {{ }} placeholders that only become text
+        // when the first feed message binds. Painting on arrival therefore shows the raw template — "{{ node.site }}"
+        // scattered across the page — until the snapshot lands a moment later. On a reconnect that is worse than
+        // ugly, because the canvas already holds a perfectly good render of the same site and the flash replaces it
+        // with something that looks broken.
+        //
+        // So the first paint waits for the first bind. The deadline is the safety net: a site with no feed at all
+        // would otherwise never appear, so once it passes the template is painted as-is — which is exactly the old
+        // behaviour, just no longer the common case.
+        _awaitingFirstBind = true;
+        _bindDeadline = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * 3 / 4);   // 750ms
     }
 
     /// <summary>
@@ -81,6 +98,10 @@ internal static unsafe partial class BrowserRenderer
 
         _document.Bind(model);
         _document.Refresh();
+
+        // The document now has real values in it, so it is safe to show. On a reconnect this is the moment the old
+        // frame is replaced — by a complete one, rather than by a template mid-bind.
+        _awaitingFirstBind = false;
         Paint();
     }
 
@@ -112,6 +133,18 @@ internal static unsafe partial class BrowserRenderer
         var width = CanvasWidth();
         var height = CanvasHeight();
         var resized = width != _paintedWidth || height != _paintedHeight;
+
+        // The safety net for a document whose feed never arrives: show it anyway rather than leave the visitor on a
+        // blank canvas — or, worse, on the previous site's page — indefinitely.
+        if (_awaitingFirstBind)
+        {
+            if (Stopwatch.GetTimestamp() < _bindDeadline) return;
+
+            Console.WriteLine("[cupri] no feed message within 750ms — painting the page unbound");
+            _awaitingFirstBind = false;
+            Paint();
+            return;
+        }
 
         if (_document.Animate(seconds) || resized) Paint();
     }
