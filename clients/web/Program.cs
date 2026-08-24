@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CupriNet.Alembic.BouncyCastle;
 using CupriNet.Core;
 // Pilgrimage and ShrineSession live in CupriNet.Hosting the NAMESPACE but ship in the CupriNet.Shrine PACKAGE —
@@ -32,6 +33,12 @@ static async Task BrowseAsync()
     // The node that served this page inlined its own signed link, so the first visit needs no input.
     string? link = BrowserDataChannel.Seed();
 
+    // Whether the current link belongs to the node that served this page. Only that node can be reconnected to
+    // automatically: reconnecting needs a FRESH link, the only way to get one is an HTTP fetch, and this page has an
+    // HTTP relationship with its origin and with nowhere else. A pasted link names a node we can dial but never ask
+    // for a new link — so when one of those goes away, the address bar is genuinely the only way back.
+    var origin = true;
+
     while (link is not null)
     {
         string? next = null;
@@ -41,20 +48,92 @@ static async Task BrowseAsync()
         }
         catch (Exception ex)
         {
-            // A failed visit must leave the client usable: say so in the chrome and fall back to the address bar,
-            // rather than ending the session and leaving a page that looks alive but is not.
+            // A failed visit must leave the client usable: say so in the chrome and either reconnect or fall back to
+            // the address bar, rather than ending the session and leaving a page that looks alive but is not.
             Console.WriteLine($"[cupri] visit failed: {ex.GetType().Name}: {ex.Message}");
             BrowserNavigation.Status($"visit failed — {ex.Message}");
         }
 
-        if (next is null)
+        if (next is not null)
         {
-            BrowserNavigation.Status("idle — paste an intonation link to visit another node");
-            next = await WaitForLinkAsync();
+            // The visitor navigated. From here the address bar owns where we are, not the seed.
+            link = next;
+            origin = false;
+            continue;
         }
 
-        link = next;
+        if (origin)
+        {
+            // The visit ended without the visitor asking it to: the channel dropped, or the node restarted under us.
+            // Left alone this is the state the client used to sit in forever — connected-looking, actually dead.
+            (link, origin) = await ReconnectToOriginAsync();
+            continue;
+        }
+
+        BrowserNavigation.Status("idle — paste an intonation link to visit another node");
+        link = await WaitForLinkAsync();
+        origin = false;
     }
+}
+
+/// <summary>
+/// Waits for the serving node to come back and returns a freshly fetched link to it, or whatever the visitor pasted
+/// while waiting — they should never be trapped watching a node that is not coming back.
+/// </summary>
+static async Task<(string Link, bool Origin)> ReconnectToOriginAsync()
+{
+    for (var attempt = 1; ; attempt++)
+    {
+        // 1, 2, 4, 8 seconds then flat. A restart is usually seconds, so the early retries are the ones that matter;
+        // the cap keeps a node gone for the afternoon from being polled once a second until the tab is closed.
+        var backoff = Math.Min(8, 1 << Math.Min(attempt - 1, 3));
+
+        for (var remaining = backoff; remaining > 0; remaining--)
+        {
+            BrowserNavigation.Status($"connection lost — reconnecting in {remaining}s");
+            if (await WaitASecondAsync() is { } pastedWhileWaiting) return (pastedWhileWaiting, false);
+        }
+
+        BrowserNavigation.Status("reconnecting …");
+
+        // The HTTP fetch is the probe, and it is a much better one than a dial. It comes back in milliseconds when
+        // the node is down (connection refused) where a dial to a dead endpoint costs an ICE timeout — about fifteen
+        // seconds of looking like progress while nothing is happening.
+        //
+        // It also has to succeed before there is anything worth dialling: a restarted node regenerated its ICE
+        // credentials and DTLS certificate, so the link held from before the restart names coordinates nobody is
+        // listening on, and no amount of patience makes it work.
+        var before = BrowserDataChannel.SeedSerial();
+        BrowserDataChannel.RequestSeedRefresh();
+
+        for (var i = 0; i < 3; i++)
+        {
+            if (await WaitASecondAsync() is { } pastedWhileFetching) return (pastedWhileFetching, false);
+            if (BrowserDataChannel.SeedSerial() != before) return (BrowserDataChannel.Seed(), true);
+        }
+    }
+}
+
+/// <summary>
+/// About a second, measured on a real clock and yielding a frame at a time — and abandoned early if the visitor
+/// pastes a link, so the address bar stays responsive throughout a reconnect.
+/// </summary>
+/// <remarks>
+/// Wall clock rather than a frame count: <c>requestAnimationFrame</c> is throttled hard in a background tab, so
+/// "sixty frames" there can be a minute. There is no <c>Task.Delay</c> to use instead — this runtime has no timer
+/// thread behind one, which is the same reason <see cref="BrowserLoop"/> exists at all.
+/// </remarks>
+static async Task<string?> WaitASecondAsync()
+{
+    var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
+
+    while (Stopwatch.GetTimestamp() < deadline)
+    {
+        await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
+        if (BrowserNavigation.TakePendingLink() is { } link) return link;
+    }
+
+    return null;
 }
 
 /// <summary>

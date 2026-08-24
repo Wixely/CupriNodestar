@@ -23,6 +23,38 @@ mergeInto(LibraryManager.library, {
 
     init: function () {},
 
+    // Tears the current connection down completely.
+    //
+    // Load-bearing for reconnecting, and the absence of it was a real bug: a new dial used to leave the previous
+    // RTCPeerConnection alive with its onmessage handler still attached, so late frames from the DEAD session kept
+    // arriving in the shared inbox. The next Pilgrimage then met an Auspice frame in the middle of its handshake
+    // and died with "Unexpected frame on stream 7 during the Toll exchange" — a confusing failure a long way from
+    // its cause. Detaching the handlers matters as much as closing: close() is not instantaneous, and a message
+    // already in flight will still be delivered.
+    teardown: function () {
+      try {
+        if (cupri.channel) {
+          cupri.channel.onmessage = null;
+          cupri.channel.onopen = null;
+          cupri.channel.onclose = null;
+          cupri.channel.onerror = null;
+          cupri.channel.close();
+        }
+      } catch (e) { /* already gone; nothing to salvage */ }
+
+      try {
+        if (cupri.pc) {
+          cupri.pc.onconnectionstatechange = null;
+          cupri.pc.oniceconnectionstatechange = null;
+          cupri.pc.close();
+        }
+      } catch (e) { /* as above */ }
+
+      cupri.channel = null;
+      cupri.pc = null;
+      cupri.inbox = [];   // cleared AFTER detaching, or a racing delivery lands in the next session's queue
+    },
+
     fail: function (why) {
       cupri.error = String(why);
       cupri.state = 2;
@@ -65,6 +97,11 @@ mergeInto(LibraryManager.library, {
   cupri_connect: function (jsonPtr) {
     try {
       const p = JSON.parse(UTF8ToString(jsonPtr));
+
+      // Whatever came before goes first. Belt and braces alongside the close on dispose: this is the one place that
+      // is guaranteed to run before a new session exists, so a leak anywhere else still cannot corrupt this one.
+      cupri.teardown();
+
       cupri.state = 0;
       cupri.inbox = [];
 
@@ -77,12 +114,45 @@ mergeInto(LibraryManager.library, {
       cupri.channel = ch;
 
       ch.onopen = function () { cupri.state = 1; };
-      ch.onclose = function () { if (cupri.state !== 2) cupri.state = 3; };
+      ch.onclose = function () { console.log('[cupri] datachannel closed'); if (cupri.state !== 2) cupri.state = 3; };
       ch.onerror = function (e) { cupri.fail('datachannel: ' + (e && e.message ? e.message : 'error')); };
       ch.onmessage = function (e) { cupri.inbox.push(new Uint8Array(e.data)); };
 
       pc.oniceconnectionstatechange = function () {
+        console.log('[cupri] ice ' + pc.iceConnectionState);
         if (pc.iceConnectionState === 'failed') cupri.fail('ice failed');
+      };
+
+      // Noticing that the far end has GONE is the slow part of WebRTC, and getting it wrong is why a restarted
+      // server used to leave this client sitting on a dead connection indefinitely.
+      //
+      // A peer that dies without closing anything leaves the DataChannel readyState 'open' — there is no FIN to
+      // observe, because there is no TCP. Chrome only gives up when ICE consent freshness expires (RFC 7675), about
+      // THIRTY SECONDS later, which is far too long to look like anything but a hang.
+      //
+      // 'disconnected' arrives within a few seconds, but it is legitimately transient: a burst of packet loss on a
+      // mobile link produces it and then recovers. So it starts a grace timer rather than failing outright, and only
+      // a disconnect that is still there when the timer fires is treated as the far end being gone.
+      var lapse = null;
+      var cancelLapse = function () { if (lapse !== null) { clearTimeout(lapse); lapse = null; } };
+
+      pc.onconnectionstatechange = function () {
+        var s = pc.connectionState;
+        // Logged, not just acted on: when a visit stops working the FIRST question is what the transport thought
+        // was happening, and without this the answer is invisible from outside the tab.
+        console.log('[cupri] connection ' + s);
+
+        if (s === 'failed' || s === 'closed') { cancelLapse(); cupri.fail('connection ' + s); return; }
+
+        if (s === 'disconnected') {
+          cancelLapse();
+          lapse = setTimeout(function () {
+            if (pc.connectionState === 'disconnected') cupri.fail('connection lost');
+          }, 5000);
+          return;
+        }
+
+        if (s === 'connected') cancelLapse();   // it came back on its own; nothing to report
       };
 
       pc.createOffer()
@@ -100,6 +170,14 @@ mergeInto(LibraryManager.library, {
   cupri_state__deps: ['$cupri'],
   cupri_state: function () { return cupri.state; },
 
+  // Closes the connection and drops everything associated with it. Called when a visit ends, so a peer connection
+  // does not outlive the session that owns it.
+  cupri_close__deps: ['$cupri'],
+  cupri_close: function () {
+    cupri.teardown();
+    cupri.state = 3;
+  },
+
   // The seeded link, fetched by the host page before the module loaded. Deliberately NOT HttpClient on the managed
   // side: without Mono there is no browser HTTP handler behind it, so it would compile and then fail at runtime.
   // Handing the page's own fetch result across is both simpler and one less thing to go wrong.
@@ -112,6 +190,22 @@ mergeInto(LibraryManager.library, {
     if (bytes > cap) return -1;
     stringToUTF8(seed, ptr, cap);
     return bytes - 1;
+  },
+
+  // Asks the page to re-fetch the seed. Fire and forget: the fetch is async and this boundary is not, so the module
+  // starts it here and watches cupri_seed_serial to learn whether it landed.
+  cupri_refresh_seed__deps: ['$cupri'],
+  cupri_refresh_seed: function () {
+    const bridge = globalThis.__cupri;
+    if (bridge && typeof bridge.refreshSeed === 'function') bridge.refreshSeed();
+  },
+
+  // Advances only on a SUCCESSFUL re-fetch, which is what makes it usable as "is the node back?". A counter rather
+  // than a flag so a refresh that lands while the module is between polls cannot be missed.
+  cupri_seed_serial__deps: ['$cupri'],
+  cupri_seed_serial: function () {
+    const bridge = globalThis.__cupri;
+    return bridge && bridge.seedSerial ? bridge.seedSerial | 0 : 0;
   },
 
   // --- rendering -----------------------------------------------------------------------------------------------

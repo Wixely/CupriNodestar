@@ -96,6 +96,25 @@
     <DirectPInvoke Include="js" />
   </ItemGroup>
 
+  <!--
+    Force a relink when the JS bridge changes.
+
+    imports.js reaches the Emscripten linker through LinkerArg, which is a COMMAND-LINE argument: MSBuild never
+    learns the file is an input, so editing it leaves the previous link looking perfectly up to date. The build then
+    succeeds, reports nothing unusual, and ships a module still carrying the OLD bridge — every symptom points at
+    the JavaScript being wrong when in fact it was never linked.
+
+    That cost a debugging session: three rounds of "add logging, rebuild, observe no logging". Deleting the link's
+    own output is what makes the real link target notice it has work to do.
+  -->
+  <Target Name="RelinkWhenJsBridgeChanges"
+          BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)/wwwroot/imports.js"
+          Outputs="$(OutputPath)native/dotnet.native.js">
+    <Message Importance="high" Text="imports.js changed — discarding the previous native link so it is rebuilt." />
+    <Delete Files="$(OutputPath)native/dotnet.native.js;$(OutputPath)native/dotnet.native.wasm" />
+  </Target>
+
   <ItemGroup>
     <!-- Wasm has no system font list to fall back on, so the renderer needs faces of its own or text lays out and
          paints as nothing — a missing asset that reads as a broken renderer. Noto Sans (OFL, licence alongside),

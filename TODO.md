@@ -88,6 +88,14 @@ system, while this one is honest about what a clone actually gets today.
       viewport; anything below that — the peer list, on a short window — simply cannot be reached.
 - [ ] **No history.** No back, and links are the only way in — there is no roaming to an address you do not already
       hold a link for.
+- [x] **Reconnects after the serving node restarts.** Detected in ~7s (a `disconnected` connection state plus a
+      grace timer, rather than waiting ~30s for ICE consent freshness to expire), then a backoff that re-fetches the
+      link over HTTP before dialling. The re-fetch is mandatory, not an optimisation: a restarted node regenerates
+      its ICE credentials and DTLS certificate, so the link a page booted with is permanently dead.
+- [ ] **A pasted link cannot be reconnected to.** Auto-reconnect only works for the node that served the page,
+      because refreshing a link means an HTTP fetch and the page has an HTTP relationship with its origin alone.
+      When a node reached by pasted link restarts, the address bar is the only way back. A node could plausibly
+      serve links for peers it knows, which would close this — it is a design question, not an oversight.
 
 ## Infrastructure
 

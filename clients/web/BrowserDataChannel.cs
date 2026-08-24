@@ -34,6 +34,15 @@ internal sealed partial class BrowserDataChannel : IDataChannel
     [LibraryImport("js", EntryPoint = "cupri_seed")]
     private static partial int SeedLink(IntPtr buffer, int capacity);
 
+    [LibraryImport("js", EntryPoint = "cupri_close")]
+    private static partial void CloseCore();
+
+    [LibraryImport("js", EntryPoint = "cupri_refresh_seed")]
+    private static partial void RefreshSeedCore();
+
+    [LibraryImport("js", EntryPoint = "cupri_seed_serial")]
+    private static partial int SeedSerialCore();
+
     [LibraryImport("js", EntryPoint = "cupri_send")]
     private static partial int Send(IntPtr data, int length);
 
@@ -46,6 +55,19 @@ internal sealed partial class BrowserDataChannel : IDataChannel
     /// <para>Read through the shim rather than with <c>HttpClient</c> on purpose: without Mono there is no browser
     /// HTTP handler behind <c>HttpClient</c>, so it would compile cleanly and fail at runtime.</para>
     /// </summary>
+    /// <summary>
+    /// Asks the page to re-fetch the serving node's link. Returns immediately — the fetch is asynchronous, so
+    /// <see cref="SeedSerial"/> is how a caller learns whether it landed.
+    ///
+    /// <para>Needed because a restarted node is unreachable at its old coordinates: ICE credentials and the DTLS
+    /// certificate are generated per process and persisted nowhere, so the link this client booted with dies with
+    /// the process that minted it. Reconnecting means re-fetching, not re-dialling.</para>
+    /// </summary>
+    public static void RequestSeedRefresh() => RefreshSeedCore();
+
+    /// <summary>Advances on each successful seed re-fetch; unchanged means the node is still unreachable.</summary>
+    public static int SeedSerial() => SeedSerialCore();
+
     public static unsafe string Seed()
     {
         var buffer = new byte[4096];
@@ -154,9 +176,19 @@ internal sealed partial class BrowserDataChannel : IDataChannel
             return Receive((IntPtr)pointer, _buffer.Length);
     }
 
+    /// <summary>
+    /// Ends the visit and closes the underlying peer connection.
+    ///
+    /// <para>Closing the JS side is the part that matters. Marking this object disposed stops MANAGED reads, but the
+    /// browser's <c>RTCPeerConnection</c> outlives it happily — handlers attached, still delivering into the shared
+    /// inbox. The next visit then met frames from the previous one mid-handshake, which surfaced as a Noise failure
+    /// naming a stream the handshake has no business seeing.</para>
+    /// </summary>
     public ValueTask DisposeAsync()
     {
+        if (_disposed) return ValueTask.CompletedTask;
         _disposed = true;
+        CloseCore();
         return ValueTask.CompletedTask;
     }
 

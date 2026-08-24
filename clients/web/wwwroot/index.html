@@ -110,6 +110,32 @@
         canvas,
         pending: '',
         status: (text) => { status.textContent = text; },
+        seedSerial: 0,
+        refreshSeed: () => {},   // replaced below; declared here so the shape is complete from the start
+      };
+
+      // Re-fetching the seed is what makes reconnecting possible at all.
+      //
+      // A restarted node has NEW ICE credentials and a NEW DTLS fingerprint — both are generated per process and
+      // neither is persisted — so the link this page booted with is permanently dead the moment the server bounces.
+      // Re-dialling it can never succeed, however patiently. Only a freshly fetched link can, and fetching is a
+      // clearnet HTTP concern that belongs here rather than in the module: without Mono there is no browser HTTP
+      // handler behind HttpClient, so managed code cannot do it.
+      //
+      // The serial lets the module tell "the server answered" from "the server is still down" without needing an
+      // async call across the boundary: it only advances on a successful fetch.
+      globalThis.__cupri.refreshSeed = async () => {
+        try {
+          const response = await fetch('intonation.json', { cache: 'no-store' });
+          if (!response.ok) return;
+          const fresh = (await response.json()).link;
+          if (!fresh) return;
+          globalThis.__cupri.seed = fresh;
+          globalThis.__cupri.seedSerial++;
+        } catch {
+          // Expected while the node is restarting — the page is served by the very thing that is down. The module
+          // backs off and asks again; there is nothing useful to report for a failure we are already retrying.
+        }
       };
 
       document.getElementById('go').addEventListener('submit', (e) => {
