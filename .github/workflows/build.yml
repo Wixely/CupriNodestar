@@ -7,6 +7,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per branch. A full run is ~13 minutes and dominated by the browser job (wasm toolchain, wasm publish,
+# Chromium), so three commits in quick succession otherwise means three complete pipelines racing to tell you about
+# a commit that is already superseded.
+#
+# Tags are exempt from cancellation on purpose: a `v*` run publishes a Release, and cancelling one halfway leaves a
+# partially-populated release rather than no release — the failure that is hardest to notice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   # Every build carries its run number: 0.1.0-alpha.47, not a hundred artifacts all called 0.1.0-alpha. These builds
   # exist so people can try the thing and send back a log, and the first question about any log is "which build?".
