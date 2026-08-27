@@ -72,11 +72,15 @@ jobs:
       - name: Test the samples
         run: dotnet test samples/Samples.slnx -c Release --no-build --logger "trx;LogFileName=samples.trx" --results-directory artifacts/test-results
 
+      # Diagnostics, so NEVER fatal — see the note on the browser job's diagnostics upload for why. The tests
+      # themselves have already passed or failed above; this step only decides whether the trx is downloadable.
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: test-results
           path: artifacts/test-results
+          retention-days: 7
 
   # Something a person can download, unzip and run — which is the point of these builds. Mode 2 (the site served
   # over plain HTTP) needs no browser client and no wasm toolchain, so it is the example that works everywhere and
@@ -158,10 +162,13 @@ jobs:
       - name: Include the instructions beside the binary
         run: cp samples/Constellation/README.md artifacts/example-${{ matrix.rid }}/README.md
 
+      # Load-bearing: `release` zips these onto the tag. Self-contained publishes for three RIDs are the largest
+      # thing this pipeline produces, and on a tag they end up on the Release anyway, which is where they persist.
       - uses: actions/upload-artifact@v4
         with:
           name: constellation-${{ matrix.rid }}
           path: artifacts/example-${{ matrix.rid }}
+          retention-days: 7
 
   # Mode 1 in a real browser: dial, Pilgrimage, Oracle fetch, render, live update. Every failure in that chain is
   # SILENT — a stripped export, a trimmed binder, a missing font, an uncleared background all produce a page that
@@ -211,19 +218,35 @@ jobs:
       # Always: a screenshot of what the page looked like plus both logs — the client's and the node's. Without this
       # a failure on someone else's machine is a bare assertion message about a chain that lives inside a wasm
       # module in a headless browser.
+      # Diagnostics, so NEVER fatal.
+      #
+      # v0.1.0-alpha.5 was lost exactly here. Every job passed — 82 tests, the samples, the gate in real Chromium —
+      # and then this step hit the ACCOUNT-WIDE artifact storage quota, filled by another repository. Failing the
+      # step failed the job, which skipped `pack` and `example`, which skipped `publish` and `release`. A green
+      # build shipped nothing because a screenshot could not be uploaded.
+      #
+      # A diagnostic that cannot be stored is worth a warning, not a lost release: nothing downstream reads this
+      # artifact, and the information it carries only matters when something else has already gone wrong.
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: browser-diagnostics
           path: |
             artifacts/browser-diagnostics
             artifacts/test-results
+          retention-days: 7
 
       # The staged bundle, so a Mode-1 example can be assembled without the wasm toolchain.
+      #
+      # This one IS load-bearing — `pack` and `example` both download it, and both refuse to proceed without it — so
+      # it must stay fatal. It is handed between jobs of one run and read by nothing afterwards, hence the one-day
+      # retention: the default is ninety, and ninety days of multi-megabyte wasm bundles is what exhausts a quota.
       - uses: actions/upload-artifact@v4
         with:
           name: browser-client
           path: clients/web/bin/Release/net10.0/browser-wasm/publish
+          retention-days: 1
 
   # Packing lives HERE rather than in `build`, and the reason is a defect that shipped in v0.1.0-alpha.1.
   #
@@ -301,10 +324,13 @@ jobs:
             exit 1
           fi
 
+      # Load-bearing: `publish` pushes these to the feed. Kept a week so a package from an ordinary main build can
+      # still be fetched by hand, rather than the ninety days that would accumulate one set per commit.
       - uses: actions/upload-artifact@v4
         with:
           name: packages
           path: artifacts/nuget
+          retention-days: 7
 
   # The CupriFace boundary, enforced rather than asserted.
   #

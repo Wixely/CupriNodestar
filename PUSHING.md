@@ -86,6 +86,35 @@ A tag also publishes those packages to **GitHub Packages**. They are no longer a
 Prerelease is deliberate, not modesty: nothing has been consumed by anyone, the deploy story is unfinished
 (`TODO.md`), and the packaging changed recently enough that its shape should not be treated as settled.
 
+## What went wrong on v0.1.0-alpha.5
+
+The tag run was **green everywhere that mattered and shipped nothing**. 82 tests passed, the samples passed, the
+browser gate dialled and rendered in real Chromium — and then:
+
+```
+Failed to CreateArtifact: Artifact storage quota has been hit.
+```
+
+That was the `browser-diagnostics` upload: a screenshot and two logs, read by nobody unless something has already
+gone wrong. Failing the step failed the `browser` job, which skipped `pack` and `example`, which skipped `publish`
+and `release`. **A release was lost because a diagnostic could not be stored.**
+
+Two things came out of it:
+
+- **Diagnostic uploads are now `continue-on-error: true`.** Nothing downstream reads them, and their value is
+  entirely conditional on a failure that has already happened elsewhere. They warn now instead of cascading.
+- **Every artifact has a `retention-days`.** The default is **ninety**, which for a pipeline producing a wasm bundle,
+  a package set and three self-contained publishes per run is how a quota gets consumed by accident. Artifacts handed
+  between jobs of one run keep a day; the rest keep a week.
+
+The load-bearing uploads — `browser-client`, `packages`, `constellation-*` — deliberately stay fatal. `pack` and
+`example` refuse to proceed without the client bundle, and that guard is the whole reason they wait on `browser`.
+
+**The quota itself is not this repository's to fix.** CupriNodestar holds no artifacts at all; the limit is
+account-wide and was consumed elsewhere under the Wixely account. Usage recalculates every 6–12 hours, so a run that
+fails this way may simply succeed later — which is its own trap, because it makes the failure look intermittent when
+it is really a shared resource running out.
+
 ## What the CI cannot tell you
 
 - **The Docker image has never been built.** No Docker on the development machine, and no job builds it yet.
