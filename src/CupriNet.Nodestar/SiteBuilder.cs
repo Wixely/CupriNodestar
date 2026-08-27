@@ -13,6 +13,7 @@ public sealed class SiteBuilder
 {
     private readonly Dictionary<string, IAuspiceSource> _feeds = new(StringComparer.Ordinal);
     private IOracleHandler? _handler;
+    private IConduitHandler? _conduit;
 
     /// <summary>The content handler, or a 404-everything placeholder when the author supplied none.</summary>
     internal IOracleHandler Handler => _handler ?? EmptySite;
@@ -20,8 +21,12 @@ public sealed class SiteBuilder
     /// <summary>The named live feeds, keyed as a Pilgrim will attend them.</summary>
     internal IReadOnlyDictionary<string, IAuspiceSource> Feeds => _feeds;
 
+    /// <summary>The raw-session handler, or null when this site serves none. Null is the "no conduit" answer the
+    /// Shrine expects, so a visitor who opens one is sealed rather than left waiting.</summary>
+    internal IConduitHandler? Conduit => _conduit;
+
     /// <summary>True once anything has been configured — used to warn about a node that serves nothing.</summary>
-    internal bool IsConfigured => _handler is not null || _feeds.Count > 0;
+    internal bool IsConfigured => _handler is not null || _feeds.Count > 0 || _conduit is not null;
 
     // A site with no handler answers 404 rather than dropping the Pilgrimage: a visitor who reached us should learn
     // that there is nothing here, not sit waiting on a session that will never answer.
@@ -79,6 +84,62 @@ public sealed class SiteBuilder
         _feeds[name] = new DelegateAuspiceSource((publisher, cancellationToken) =>
             EmanateAsync(source, publisher, cancellationToken));
         return this;
+    }
+
+    /// <summary>
+    /// Serves a raw session: a duplex, message-framed pipe for the life of one visitor's connection. This is the
+    /// fourth thing a site can serve, alongside files, request/response and feeds — and the one that lets a protocol
+    /// that already exists move onto L2 without being rewritten as consults and topics.
+    ///
+    /// <para>The delegate runs once per visitor who opens a session and for as long as they stay. Send and receive
+    /// in whatever order the protocol calls for; returning ends the session, and so does
+    /// <see cref="SiteSession.ReceiveAsync"/> answering null.</para>
+    ///
+    /// <para><paramref name="protocolId"/> is yours to choose and is not registered anywhere — it exists so a peer
+    /// that dialled a different protocol is told so rather than fed frames it cannot read. Frames arriving under any
+    /// other id end the session with "unknown protocol"; that check is here rather than left to each author, so the
+    /// same mistake fails the same way everywhere.</para>
+    ///
+    /// <para><b>Each frame is capped at 192 KiB</b> before padding (<see cref="SiteSession.MaxFrameBytes"/>) — the
+    /// browser's ceiling, not ours. A protocol that needs to move more than that should chunk, or carry the bulk as
+    /// a relic.</para>
+    /// </summary>
+    public SiteBuilder OnSession(uint protocolId, Func<SiteSession, CancellationToken, Task> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _conduit = new DelegateConduitHandler((conduit, cancellationToken) =>
+            AttendAsync(handler, new SiteSession(conduit, protocolId), cancellationToken));
+        return this;
+    }
+
+    /// <summary>Serves a raw session through your own <see cref="IConduitHandler"/>, in the rite's own names.</summary>
+    public SiteBuilder OnSession(IConduitHandler handler)
+    {
+        _conduit = handler ?? throw new ArgumentNullException(nameof(handler));
+        return this;
+    }
+
+    /// <summary>
+    /// Runs a session and treats the visitor leaving as the end of the session, not as a failure.
+    ///
+    /// <para>The same rule as a feed, for the same reason. A session is duplex, so a departure is discovered by
+    /// whichever of a send or a receive happens to race the close — and left alone that surfaces as a warning with a
+    /// stack trace for every visitor who ever closes a tab. <see cref="SiteSession.ReceiveAsync"/> already answers a
+    /// clean close with null; this catches the case where the author was mid-send when it happened.</para>
+    /// </summary>
+    private static async Task AttendAsync(
+        Func<SiteSession, CancellationToken, Task> handler,
+        SiteSession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await handler(session, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsDeparture(ex))
+        {
+            // Nothing to report and nothing to do: the other end is gone.
+        }
     }
 
     /// <summary>

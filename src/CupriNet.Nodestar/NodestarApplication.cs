@@ -142,7 +142,10 @@ public sealed class NodestarApplication : IAsyncDisposable
         if (!_site.IsConfigured)
             _log.LogWarning("No site content configured — visitors will receive 404 for everything. Call builder.Site.ServeStaticFiles(...) or .Serve(...).");
 
-        _node.HostShrine(signet, _site.Handler, _site.Feeds, _options.AdvertiseSiteInLink);
+        // Relics are not wired up yet (see TODO.md) and the conduit is null unless the site called OnSession. Null
+        // is the meaningful answer in both cases rather than an omission: it is what lets the Shrine seal a visitor
+        // who opens a session this site does not serve, instead of leaving them waiting on a reply.
+        _node.HostShrine(signet, _site.Handler, _site.Feeds, null, _site.Conduit, _options.AdvertiseSiteInLink);
 
         await SeedAsync(cancellationToken).ConfigureAwait(false);
 
@@ -150,6 +153,8 @@ public sealed class NodestarApplication : IAsyncDisposable
         _log.LogInformation("Site address: {Address}", _node.ShrineAddress);
         if (_site.Feeds.Count > 0)
             _log.LogInformation("Live feeds: {Feeds}", string.Join(", ", _site.Feeds.Keys));
+        if (_site.Conduit is not null)
+            _log.LogInformation("Raw sessions: served.");
         if (_options.AdvertiseSiteInLink)
             _log.LogInformation("The site's Signet is stamped into this node's link — it is therefore linkable to the node's overlay identity.");
 

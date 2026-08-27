@@ -68,6 +68,27 @@ system, while this one is honest about what a clone actually gets today.
       That is a much better failure — but nothing in this repository's docs tells someone dropping a large image into
       `l2-wwwroot` that a ceiling exists at all, so they meet it as a surprise rather than a constraint.
 
+- [x] **Raw sessions — the README's fourth site option.** `SiteBuilder.OnSession(protocolId, handler)` serves a
+      duplex, message-framed pipe for the life of one visitor, over the Conduit rite on vessel stream 4. Asked for in
+      [#1](https://github.com/Wixely/CupriNodestar/issues/1); unblocked by
+      [CupriNet#3](https://github.com/Wixely/CupriNet/issues/3) landing in 0.3.6.
+
+      `SiteSession` is the plain-naming adapter, the same one adapter deep that `Serve` is over the Oracle: bytes in,
+      bytes out, no `ConduitFrame` to build and no flag bits to learn. Three properties it guarantees, because they
+      are what a protocol moving onto L2 needs and what the issue asked for — **frames keep their boundaries**
+      (nothing re-frames what a protocol already framed), **a clean close is null rather than an exception** (someone
+      closing a tab is not an error path, and it latches so a receive loop cannot hang on it), and **concurrent sends
+      are safe** (`ConduitSession` holds a send lock as of 0.3.5).
+
+      The `protocolId` check lives here rather than in each author's handler: a frame under another id ends the
+      session with `"unknown protocol"` and *tells the peer*, so someone who dialled the wrong site learns that
+      instead of waiting. `OnSession(IConduitHandler)` reaches the rite's own names for anyone who wants them.
+
+      **What is untested is the network.** `RawSessionTests` drives real `ConduitSession`s on both ends over an
+      in-memory channel — the real codec, the real seal, the real close — but no browser has yet opened a session
+      against a running node. The reference client renders sites and does not open conduits; the first consumer to do
+      so will be the first real test. A `ShrineSession.Conduits` on the browser end needs no Nodestar code.
+
 - [x] **Mode 2 binds the page before serving it.** A Document-tier page is a template whose `{{ }}` placeholders a
       Mode-1 client resolves; the gateway used to hand that template straight to a browser, which rendered the braces
       as literal text. Every Document-tier site was affected, including the onion and tunnel deployments that are
@@ -145,3 +166,18 @@ system, while this one is honest about what a clone actually gets today.
       there is one implementation of the handshake again.
 - [ ] **[CupriFace#51](https://github.com/Wixely/CupriFace/issues/51)** — `repeat(auto-fill, minmax(…))` collapses
       grid tracks. Worked around with flex wrap; no action needed here unless it is fixed.
+- [x] **[CupriNet#3](https://github.com/Wixely/CupriNet/issues/3)** — done, in CupriNet **0.3.6**. `ConduitHost`,
+      `IConduitHandler`, `DelegateConduitHandler`, a fourth `HostShrine` overload and `ShrineSession.Conduits`, in
+      `CupriNet.Shrine` so a WASM build reaches them. `OnSession` is built on it.
+
+      **0.3.5 is skipped deliberately, and the reason is worth keeping.** It shipped the seam, but a sealed conduit
+      was followed by a read that never returned: the host holds the visit open for the other rites, so no close was
+      coming. "Translate the seal, then expect null" — the obvious handler, and the one this repository would have
+      written — hung rather than failed. 0.3.6 latches the seal. Two of the corrections upstream made were to claims
+      in the issue that were simply wrong: the Conduit *was* already reachable on the channel path
+      (`ArcanumSession.Conduits`), and `ReceiveAsync` was already nullable. The second came from reading the API
+      through a reflection dump, which cannot see nullable annotations — compile a probe against the package instead.
+
+      Also settled there, and relied on above: `ConduitFlags.Reserved` is the mask to test against (never `Sealed`),
+      the 192 KiB ceiling is measured on the payload *before* padding, `ProtocolId` is the consumer's to choose with
+      no registry, and a single reader is assumed on receive.

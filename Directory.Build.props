@@ -19,11 +19,16 @@
              browser be a Pilgrim without constructing a node that binds sockets.
       0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
              (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+      0.3.6  the Conduit rite reachable from a Pilgrimage — ConduitHost, IConduitHandler, a HostShrine overload and
+             ShrineSession.Conduits — which is what SiteBuilder.OnSession is built on. 0.3.5 shipped the seam but a
+             sealed conduit was followed by a read that never returned; 0.3.6 latches the seal so the close a site
+             author writes against actually arrives. Skipping straight to it is deliberate: on 0.3.5 the natural
+             handler ends in a hang rather than an error, which is the worse of the two failures.
 
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.3.4</CupriNetVersion>
+    <CupriNetVersion>0.3.6</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
     <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
          properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
