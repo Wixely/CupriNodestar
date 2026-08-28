@@ -4,6 +4,7 @@ using CupriNet.Abstractions;
 using CupriNet.Core;
 using CupriNet.Hosting;
 using CupriNet.Persistence;
+using CupriNet.Vessel;
 using Microsoft.Extensions.Logging;
 
 namespace CupriNet.Nodestar;
@@ -23,6 +24,7 @@ public sealed class NodestarApplication : IAsyncDisposable
     private readonly IReadOnlyList<Func<NodestarApplication, CancellationToken, Task>> _started;
     private CupriNode? _node;
     private IWebRtcTransport? _webRtc;
+    private Signet? _signet;
 
     internal NodestarApplication(
         NodestarOptions options,
@@ -139,6 +141,9 @@ public sealed class NodestarApplication : IAsyncDisposable
             .LoadOrCreateAsync(suite, _options.SiteName, cancellationToken)
             .ConfigureAwait(false);
 
+        // Kept so AcceptPilgrimageAsync can serve this site over a vessel the caller supplies.
+        _signet = signet;
+
         if (!_site.IsConfigured)
             _log.LogWarning("No site content configured — visitors will receive 404 for everything. Call builder.Site.ServeStaticFiles(...) or .Serve(...).");
 
@@ -233,6 +238,37 @@ public sealed class NodestarApplication : IAsyncDisposable
         {
             // The normal way to stop.
         }
+    }
+
+    /// <summary>
+    /// Serves this site to one Pilgrim over a vessel you supply, for as long as they stay.
+    ///
+    /// <para><b>Why this exists.</b> A visitor reaches a site over WebRTC because an accepted DataChannel routes into
+    /// the Pilgrimage on its own. Nothing else does. A TCP connection to this node's listen port reaches the NODE —
+    /// it completes a node-to-node handshake presenting the node's own Sigil — so pinning the site's Signet against
+    /// it fails, and pinning the node's Sigil instead succeeds into a session with no Shrine behind it. That second
+    /// outcome is the dangerous one: the handshake reports success and every rite then answers with a closed stream,
+    /// which reads as "the rite is broken" rather than "you are not talking to a site". Reported as #2.</para>
+    ///
+    /// <para>So this is the seam for every transport that is not WebRTC: a test harness pairing two vessels in
+    /// process, a desktop client over TCP, anything that can produce an <see cref="IVessel"/>. The caller owns
+    /// accepting the connection; this owns what the site answers with. Pin <see cref="SiteAddress"/> from the other
+    /// end — the Signet, not the node's Sigil — because this time it is genuinely the site that answers.</para>
+    ///
+    /// <para>Returns when that Pilgrim's visit ends. Run it per accepted vessel; it does not loop.</para>
+    /// </summary>
+    public Task AcceptPilgrimageAsync(IVessel vessel, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(vessel);
+
+        if (_node is null || _signet is null)
+            throw new InvalidOperationException(
+                "The Nodestar has not been started yet, so it has no Signet to answer with. Call StartAsync first.");
+
+        // Relics stay null until they are wired (TODO.md); the conduit is null unless the site called OnSession, and
+        // null is what lets the Shrine seal a visitor who opens a session this site does not serve.
+        return _node.AcceptPilgrimageOverVesselAsync(
+            vessel, _signet, _site.Handler, _site.Feeds, null, _site.Conduit, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

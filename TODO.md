@@ -58,6 +58,23 @@ system, while this one is honest about what a clone actually gets today.
       the Pilgrimage on stream 8, chunk-by-chunk under the same 192 KiB frame ceiling, every chunk verified against
       the manifest and the whole file before any bytes are returned. Nothing in this repository uses it yet; see
       "Hosted apps" below for what it now makes possible.
+- [x] **A site is reachable over a vessel that is not a browser DataChannel.** `NodestarApplication.AcceptPilgrimageAsync`
+      serves the site to one Pilgrim over any `IVessel` the caller accepts — a test harness, a desktop client over
+      TCP, anything that is not WebRTC.
+
+      Found by [#2](https://github.com/Wixely/CupriNodestar/issues/2), reported as a conduit fault and diagnosed as
+      something else entirely. A TCP connection to the node's listen port reaches the **node**: it completes a
+      node-to-node handshake presenting the node's own Sigil, so pinning the site's Signet fails, and pinning the
+      node's Sigil instead succeeds into a session with no Shrine behind it. Every rite then answers with a closed
+      stream. The Oracle failed identically to the conduit, which is what showed the conduit was never the problem —
+      worth remembering as a diagnostic: if one rite looks broken over a transport, check another before blaming it.
+
+      Only WebRTC routed into the Pilgrimage on its own, and nothing here had ever exercised anything else.
+
+- [ ] **A TCP listener for the Shrine.** `AcceptPilgrimageAsync` supplies the seam but the caller still owns the
+      socket. `design/nodestar.md` anticipates a desktop client over TCP, which wants the node to listen for
+      Pilgrims itself rather than each consumer building a `VesselListener`.
+
 - [ ] **Hosted apps (the Relic tier).** Now unblocked. A Shrine could name relics through `IRelicSource` and a client
       could `FetchRelicAsync` a WASM blob, verify it against the manifest, and only then run it — which is the whole
       point: integrity is proven *before* execution, so a hostile host can fail a fetch but cannot corrupt one. The
@@ -84,10 +101,14 @@ system, while this one is honest about what a clone actually gets today.
       session with `"unknown protocol"` and *tells the peer*, so someone who dialled the wrong site learns that
       instead of waiting. `OnSession(IConduitHandler)` reaches the rite's own names for anyone who wants them.
 
-      **What is untested is the network.** `RawSessionTests` drives real `ConduitSession`s on both ends over an
-      in-memory channel — the real codec, the real seal, the real close — but no browser has yet opened a session
-      against a running node. The reference client renders sites and does not open conduits; the first consumer to do
-      so will be the first real test. A `ShrineSession.Conduits` on the browser end needs no Nodestar code.
+      **A conduit now round-trips over a real transport.** `PilgrimageOverVesselTests` starts a node, accepts a
+      Pilgrimage over a TCP vessel and echoes a frame back — the first time any rite reached a site over something
+      other than a browser DataChannel. It checks the Oracle beside the conduit on purpose, so a future failure says
+      which of the two broke.
+
+      **Still untested: a conduit over WebRTC.** The browser gate proves Mode 1 for the Oracle and the Auspice, but
+      the reference client opens no conduit, so the browser path remains unexercised. Banter's web head will be the
+      first to do it. The client half needs no Nodestar code — `ShrineSession.Conduits` comes from CupriNet.
 
 - [x] **Mode 2 binds the page before serving it.** A Document-tier page is a template whose `{{ }}` placeholders a
       Mode-1 client resolves; the gateway used to hand that template straight to a browser, which rendered the braces

@@ -11,6 +11,13 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <!-- The Pilgrim half, for the end-to-end vessel tests. Deliberately a TEST-only reference: CupriNet.Shrine is the
+       client side of a Pilgrimage, and the product serves sites rather than visiting them. -->
+  <ItemGroup>
+    <PackageReference Include="CupriNet.Shrine" Version="$(CupriNetVersion)" />
+    <PackageReference Include="CupriNet.Alembic.BouncyCastle" Version="$(CupriNetVersion)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\CupriNet.Nodestar\CupriNet.Nodestar.csproj" />
     <ProjectReference Include="..\..\src\CupriNet.Nodestar.Tor\CupriNet.Nodestar.Tor.csproj" />
