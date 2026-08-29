@@ -49,6 +49,11 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
         builder.Node.EnableFerryman = false;
         builder.Node.AdvertiseSiteInLink = true;
 
+        // A Shrine port of the node's own, alongside the caller-owned listener below. Both paths are exercised
+        // because both are supported and they fail differently: this one is what a desktop client uses, the other is
+        // what WASM and in-process tests use.
+        builder.Node.ShrinePort = 0;
+
         builder.Site.Serve(_ => OracleResponse.Text("<h1>hello</h1>", "text/html"));
         builder.Site.OnSession(ProtocolId, async (session, cancellationToken) =>
         {
@@ -94,6 +99,45 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
     }
 
     private static CancellationTokenSource Deadline() => new(TimeSpan.FromSeconds(30));
+
+    /// <summary>
+    /// The path with no accept loop in it at all — CupriNet 0.5.0's own Shrine listener, reached by dialling.
+    ///
+    /// <para>This is what #2 was really asking for. The caller-owned vessel is still the seam everything else is
+    /// built on, but a desktop or service client should not have to write a <c>VesselListener</c> loop to visit a
+    /// site, and our consumer wrote one because there was nothing else.</para>
+    ///
+    /// <para>It also inverts the failure that caused #2. On the node's L1 port, pinning the node's Sigil succeeded
+    /// into a session with no Shrine behind it; here the host presents only the Signet, so the site's address is the
+    /// key that works and a wrong one cannot complete at all.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_pilgrim_can_dial_the_shrine_port_directly()
+    {
+        using var deadline = Deadline();
+
+        var endpoint = _app.ShrineEndPoint;
+        Assert.NotNull(endpoint);
+
+        var vessel = await TcpVessel.ConnectAsync("127.0.0.1", endpoint!.Port);
+        await using var shrine = await Pilgrimage.OverVesselAsync(
+            vessel, _siteSignet, _network, new BouncyCastleSuite(), cancellationToken: deadline.Token);
+
+        var page = await shrine.ConsultAsync(OracleRequest.Get("/index.html"), deadline.Token);
+        Assert.Equal(200u, page.Status);
+
+        await shrine.Conduits.SendAsync(new ConduitFrame
+        {
+            ProtocolId = ProtocolId,
+            SchemaVersion = 1,
+            Flags = 0,
+            Payload = Encoding.UTF8.GetBytes("PORT"),
+        }, deadline.Token);
+
+        var reply = await shrine.Conduits.ReceiveAsync(deadline.Token);
+        Assert.NotNull(reply);
+        Assert.Equal("echo:PORT", Encoding.UTF8.GetString(reply.Payload));
+    }
 
     /// <summary>
     /// The regression that matters most. In #2 this threw — the peer answering was the node, so the site's own

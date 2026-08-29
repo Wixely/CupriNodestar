@@ -71,20 +71,21 @@ system, while this one is honest about what a clone actually gets today.
 
       Only WebRTC routed into the Pilgrimage on its own, and nothing here had ever exercised anything else.
 
-- [~] **A TCP listener for the Shrine — upstream's call, and it is looking at it.** `AcceptPilgrimageAsync` supplies
-      the seam but the caller still owns the socket, so every consumer writes the same `VesselListener` loop.
+- [x] **A TCP listener for the Shrine — landed upstream, exposed here.** `NodestarOptions.ShrinePort` opens a port
+      on which every connection is a Pilgrimage and the Signet is presented unconditionally;
+      `NodestarApplication.ShrineEndPoint` reads back what it bound. Off by default, because opening a port is a
+      deployment decision and the two paths that matter most need none — a browser arrives over WebRTC and the
+      gateway never leaves the process.
 
-      **The caller-owned vessel is the documented answer today**, not a stopgap: CupriNet's
-      `design/transports-and-limits.md` now states that a Shrine accepts any vessel provided a caller hands it in,
-      and that a node's L1 listen port does not serve Shrines. Nothing here is waiting on a fix.
+      CupriNet 0.5.0's `ListenForPilgrims`, which came out of the design question [#2](https://github.com/Wixely/CupriNodestar/issues/2)
+      raised. It **inverts** that failure rather than papering over it: on the L1 port, pinning the node's Sigil
+      succeeded into a session with no Shrine behind it, and here the host has no Sigil to offer, so a wrong key
+      cannot complete at all. A node hosting no Shrine never opens the port, so dialling is refused outright.
 
-      What may still change is where the socket lives. CupriNet is weighing a **dedicated Shrine port** rather than
-      demultiplexing on L1 — demultiplexing would need the host to choose which identity to present before the Noise
-      handshake, and `shrines.md` rules out a pre-Noise cleartext selector by name so the network never learns which
-      site. A separate port needs no selector and no wire change, and a node serving no Shrine simply refuses the
-      connection, which is the right error rather than a live session into nothing. If that lands, this item is
-      upstream's and Nodestar keeps `AcceptPilgrimageAsync` for the browser, WASM and test paths regardless.
-
+      `AcceptPilgrimageAsync` stays and now delegates to the overload that serves whatever the node hosts, rather
+      than restating one site's parts. That is not tidiness: 0.5.0 also selects between several hosted Signets from
+      the visitor's blinded target, so passing one site's handler explicitly would quietly answer every visitor as
+      that site.
 - [ ] **Hosted apps (the Relic tier).** Now unblocked. A Shrine could name relics through `IRelicSource` and a client
       could `FetchRelicAsync` a WASM blob, verify it against the manifest, and only then run it — which is the whole
       point: integrity is proven *before* execution, so a hostile host can fail a fetch but cannot corrupt one. The

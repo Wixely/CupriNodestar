@@ -24,7 +24,6 @@ public sealed class NodestarApplication : IAsyncDisposable
     private readonly IReadOnlyList<Func<NodestarApplication, CancellationToken, Task>> _started;
     private CupriNode? _node;
     private IWebRtcTransport? _webRtc;
-    private Signet? _signet;
 
     internal NodestarApplication(
         NodestarOptions options,
@@ -52,6 +51,12 @@ public sealed class NodestarApplication : IAsyncDisposable
 
     /// <summary>The site's <c>cupri1…</c> address, available once <see cref="StartAsync"/> has returned.</summary>
     public string? SiteAddress => _node?.ShrineAddress;
+
+    /// <summary>
+    /// Where this node serves Pilgrims over TCP, or null when <see cref="NodestarOptions.ShrinePort"/> asked for
+    /// none. Worth reading rather than assuming when the port was 0 and the OS chose.
+    /// </summary>
+    public IPEndPoint? ShrineEndPoint => _node?.ShrineEndPoint;
 
     /// <summary>The running node, available once <see cref="StartAsync"/> has returned.</summary>
     public CupriNode Node => _node ?? throw new InvalidOperationException("The Nodestar has not been started yet.");
@@ -141,9 +146,6 @@ public sealed class NodestarApplication : IAsyncDisposable
             .LoadOrCreateAsync(suite, _options.SiteName, cancellationToken)
             .ConfigureAwait(false);
 
-        // Kept so AcceptPilgrimageAsync can serve this site over a vessel the caller supplies.
-        _signet = signet;
-
         if (!_site.IsConfigured)
             _log.LogWarning("No site content configured — visitors will receive 404 for everything. Call builder.Site.ServeStaticFiles(...) or .Serve(...).");
 
@@ -151,6 +153,15 @@ public sealed class NodestarApplication : IAsyncDisposable
         // is the meaningful answer in both cases rather than an omission: it is what lets the Shrine seal a visitor
         // who opens a session this site does not serve, instead of leaving them waiting on a reply.
         _node.HostShrine(signet, _site.Handler, _site.Feeds, null, _site.Conduit, _options.AdvertiseSiteInLink);
+
+        // A port of this node's own for Pilgrims, when asked for. Upstream added it in CupriNet 0.5.0 precisely so
+        // that reaching a site over TCP stops requiring every consumer to write the same accept loop — ours was the
+        // consumer that wrote one.
+        if (_options.ShrinePort is { } shrinePort)
+        {
+            var endpoint = _node.ListenForPilgrims(shrinePort);
+            _log.LogInformation("Serving Pilgrims on tcp://{Endpoint} — pin the site address, not the node's.", endpoint);
+        }
 
         await SeedAsync(cancellationToken).ConfigureAwait(false);
 
@@ -267,14 +278,14 @@ public sealed class NodestarApplication : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(vessel);
 
-        if (_node is null || _signet is null)
+        if (_node is null)
             throw new InvalidOperationException(
                 "The Nodestar has not been started yet, so it has no Signet to answer with. Call StartAsync first.");
 
-        // Relics stay null until they are wired (TODO.md); the conduit is null unless the site called OnSession, and
-        // null is what lets the Shrine seal a visitor who opens a session this site does not serve.
-        return _node.AcceptPilgrimageOverVesselAsync(
-            vessel, _signet, _site.Handler, _site.Feeds, null, _site.Conduit, cancellationToken);
+        // Serves whatever this node hosts, rather than restating it here. That matters beyond tidiness: on CupriNet
+        // 0.5.0 this overload also picks between several hosted Signets from the visitor's blinded target, so
+        // passing one site's parts explicitly would quietly answer every visitor as that site.
+        return _node.AcceptPilgrimageOverVesselAsync(vessel, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

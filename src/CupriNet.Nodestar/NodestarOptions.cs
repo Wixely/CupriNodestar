@@ -49,6 +49,23 @@ public sealed class NodestarOptions
     /// <summary>The UDP port for the WebRTC endpoint. Defaults to <see cref="ListenPort"/> when unset.</summary>
     public int? WebRtcPort { get; set; }
 
+    /// <summary>
+    /// A TCP port on which this node serves Pilgrims directly, or null to serve none. <c>0</c> takes an
+    /// OS-assigned port, readable afterwards from <see cref="NodestarApplication.ShrineEndPoint"/>.
+    ///
+    /// <para><b>This is not the overlay port, and it must not be.</b> A connection to <see cref="ListenPort"/> is
+    /// answered by the NODE, presenting its own Sigil, because that port exists to pair overlay peers — so a visitor
+    /// pinning the site's address fails there, and one pinning the node's Sigil succeeds into a session with no
+    /// Shrine behind it. On this port every connection is a Pilgrimage and the Signet is presented unconditionally,
+    /// which inverts that: the wrong key now fails at the handshake, where a mistake belongs.</para>
+    ///
+    /// <para>Off by default because opening a port is a deployment decision, and because the two paths that matter
+    /// most need no port at all — a browser arrives over WebRTC, and the gateway never leaves the process. Set it
+    /// for a desktop or service client over TCP, or for a test harness that would otherwise write its own accept
+    /// loop.</para>
+    /// </summary>
+    public int? ShrinePort { get; set; }
+
     // ---- Tor ------------------------------------------------------------------------------------------------
 
     /// <summary>Run an onion service alongside clearnet (dual-stack).</summary>

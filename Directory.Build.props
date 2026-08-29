@@ -19,6 +19,13 @@
              browser be a Pilgrim without constructing a node that binds sockets.
       0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
              (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+      0.3.7  the Conduit's delivery contract, written down after we asked: ordered, never torn, and NOT retried. A
+             receiver that lets frames queue past the mux's per-stream limit loses them silently — the send reports
+             success and no field in a frame reveals the gap. SiteSession is built around that (it drains rather
+             than letting a handler read from the wire), so this is a floor, not currency: the behaviour exists in
+             0.3.6 too, and only the contract is new. Also raises the Arcanum conduit's ceiling off the vessel frame
+             size, which had made the documented maximum unsendable; the Pilgrimage path this repository uses was
+             never affected.
       0.3.6  the Conduit rite reachable from a Pilgrimage — ConduitHost, IConduitHandler, a HostShrine overload and
              ShrineSession.Conduits — which is what SiteBuilder.OnSession is built on. 0.3.5 shipped the seam but a
              sealed conduit was followed by a read that never returned; 0.3.6 latches the seal so the close a site
@@ -28,7 +35,7 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.3.6</CupriNetVersion>
+    <CupriNetVersion>0.5.0</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
     <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
          properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
