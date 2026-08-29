@@ -47,16 +47,34 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.6.1</CupriNetVersion>
+    <CupriNetVersion>0.6.2</CupriNetVersion>
     <!-- 0.4.0 exposes the SCTP association's negotiated message size (CupriWebRTC#1), which is what lets
          CupriNet's adapter answer IDataChannel.MaxMessageBytes with a real number instead of 0. Required by
          CupriNet.WebRtc 0.6.1 rather than merely allowed by it. -->
     <CupriWebRtcVersion>0.4.0</CupriWebRtcVersion>
-    <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
+    <!-- 0.3.0 closed every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
          properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
-         child (#55), and animating layout properties (#56). Each was re-verified with a headless render probe on
-         the bump rather than taken from the changelog. -->
-    <CupriFaceVersion>0.3.0</CupriFaceVersion>
+         child (#55), and animating layout properties (#56).
+
+         0.8.0 is five releases on, and every one of them carries a behaviour change a SITE AUTHOR should know about
+         even though none touched this repository's own markup:
+
+           0.4.0  <cupri-virtual> rows may be any height, with anchor="bottom" and VirtualListInserted — a chat log
+                  is now a supported shape rather than something to fight
+           0.5.0  white-space: pre | pre-wrap | pre-line, and &nbsp; is no longer collapsed. `pre` previously behaved
+                  as `nowrap`, so a page relying on that changes
+           0.6.0  vh/vw/vmin/vmax were NOT PARSED and fell through to a 0px fallback, so height:100vh collapsed a
+                  container and, with overflow:hidden, clipped its whole subtree to nothing. A page that worked
+                  around it with height:100% or fixed pixels should be re-checked
+           0.7.0  CupriFace.Web.Mono — the browser host as a package
+           0.8.0  CupriFace.Web.NativeAot — the same host for the runtime this client actually uses
+
+         Verified on the bump rather than taken from the changelog: the browser gate passes in real Chromium,
+         including the pointer and wheel tests, which are the ones that exercise what the renderer owns. Bundle
+         14.11 -> 14.14 MB. No API change was needed.
+
+         The two host packages are NOT adopted here yet — see TODO.md. -->
+    <CupriFaceVersion>0.8.0</CupriFaceVersion>
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->

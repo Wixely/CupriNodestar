@@ -281,6 +281,29 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
+- [ ] **Adopt `CupriFace.Web.NativeAot` as the client's host.** CupriFace 0.8.0 ships the browser host as a package
+      for the runtime this client actually uses — NativeAOT-LLVM, not Mono — with an API identical to
+      `CupriFace.Web.Mono`. It carries the frame loop, damage-rect blitting, pointer/touch/wheel/keyboard input, a
+      touch recognizer, the ARIA mirror a screen reader reads, IME composition, the clipboard, browser-decoded
+      video, and the two font faces the wasm Skia build omits.
+
+      This repository hand-wrote roughly 2,000 lines of exactly that (`BrowserLoop`, `BrowserRenderer`,
+      `BrowserInput`, `BrowserDataChannel`, `imports.js`) because the package did not exist. CupriFace's own notes
+      say the copies made from its old sample "silently arrived without accessibility, the IME and touch" — which
+      describes this client precisely: no touch, no ARIA, no IME, no clipboard.
+
+      **It is not a drop-in, and the shape of the gap is worth knowing before anyone starts.** `WebHost.Run` takes a
+      `CupriApp`, and this client has no app — it renders whatever document an Oracle response returned, and
+      replaces it when the visitor navigates. `CupriApp` is close to a fit (`Html`, `Css`, `Width`, `Height` are
+      overridable, and `Present(w, h)` looks like the hybrid zoom we hand-rolled), but three things need answering:
+      whether a host can be re-pointed at a new document mid-session, how our async browse loop coexists with a
+      frame pump the host owns, and whether `Present` supersedes `Zoom()` or fights it.
+
+      Worth doing — accessibility and touch are not things to hand-write twice — but as its own piece of work with
+      the browser gate as the arbiter, not folded into something else.
+
+
+
 - [x] **CupriFace 0.2.12 imported.** Each fix re-verified with a headless render probe rather than taken on trust:
       **#54** `transform-origin` (the sparklines now tween instead of stepping), **#53** `:root` custom properties
       (the palette moved back off `body`), **#55** percentage height on a block child. Browser gate re-run, since a
