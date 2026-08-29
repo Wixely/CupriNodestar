@@ -19,10 +19,16 @@ namespace CupriNet.Nodestar.Client;
 /// </summary>
 internal sealed partial class BrowserDataChannel : IDataChannel
 {
-    /// <summary>Matches the 256 KiB the node's SCTP association will accept; anything larger is refused at the rite.</summary>
-    private const int MaxMessageBytes = 256 * 1024;
+    /// <summary>
+    /// The inbound buffer, and the largest message this adapter will hand to the channel.
+    ///
+    /// <para>Sized at 256 KiB because that is what this node's association offers, and a receive buffer has to be
+    /// allocated before anything is negotiated. Distinct from <see cref="MaxMessageBytes"/>, which is what the two
+    /// ends actually agreed and is only knowable once the channel is open.</para>
+    /// </summary>
+    private const int BufferBytes = 256 * 1024;
 
-    private readonly byte[] _buffer = new byte[MaxMessageBytes];
+    private readonly byte[] _buffer = new byte[BufferBytes];
     private bool _disposed;
 
     [LibraryImport("js", EntryPoint = "cupri_connect")]
@@ -37,12 +43,25 @@ internal sealed partial class BrowserDataChannel : IDataChannel
     /// <summary>
     /// The largest message this association negotiated, or 0 before the channel opens.
     ///
-    /// <para>Worth logging because it is not the same number as a rite's ceiling, and only one of them is a
-    /// constant. The rite advertises 192 KiB everywhere; what a DataChannel will actually carry is whatever the two
-    /// ends agreed — this node offers 256 KiB, so the two happen to be compatible here, but a peer or middlebox
-    /// negotiating the 64 KiB interoperable floor would refuse a frame the rite called legal. The vessel does not
-    /// fragment, so nothing between them would fix it up. See CupriNodestar#4.</para>
+    /// <para>This is the number CupriNet 0.6.0 added <c>IDataChannel.MaxMessageBytes</c> for, and it is not the same
+    /// number as a rite's ceiling — only one of them is a constant. A rite advertises 192 KiB whatever it runs over;
+    /// what a DataChannel will carry is whatever the two ends agreed. <c>DataChannelVessel</c> emits one message per
+    /// frame and never fragments, so nothing in between reconciles them, and a peer negotiating the 64 KiB
+    /// interoperable floor would refuse a frame the rite called legal.</para>
+    ///
+    /// <para><b>Reporting it truthfully is something this adapter can do and the .NET one currently cannot.</b>
+    /// CupriWebRTC's association knows its own figure, but <c>WebRtcChannel</c> does not expose it, so that adapter
+    /// answers 0 — the honest answer, since guessing would refuse pairings that work. A browser hands the same value
+    /// over for free as <c>RTCSctpTransport.maxMessageSize</c>, so on this path
+    /// <c>RiteTransport.EnsureCarriesRiteFrames</c> gets a real number to check and a low-negotiating peer fails at
+    /// connect with both figures named, rather than on the wire. See CupriNet#6.</para>
+    ///
+    /// <para>0 before the channel opens, which the contract reads as "unknown" — so a check that runs too early is
+    /// skipped rather than answered with a guess.</para>
     /// </summary>
+    public int MaxMessageBytes => SctpMax();
+
+    /// <summary>The same figure, for logging before the vessel exists.</summary>
     public static int NegotiatedMaxMessageBytes => SctpMax();
 
     [LibraryImport("js", EntryPoint = "cupri_seed")]
@@ -150,9 +169,9 @@ internal sealed partial class BrowserDataChannel : IDataChannel
     public unsafe ValueTask SendAsync(ReadOnlyMemory<byte> message, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (message.Length > MaxMessageBytes)
+        if (message.Length > BufferBytes)
             throw new InvalidOperationException(
-                $"A DataChannel message may not exceed {MaxMessageBytes} bytes; this one is {message.Length}.");
+                $"A DataChannel message may not exceed {BufferBytes} bytes; this one is {message.Length}.");
 
         fixed (byte* pointer = message.Span)
         {

@@ -19,6 +19,12 @@
              browser be a Pilgrim without constructing a node that binds sockets.
       0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
              (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+      0.6.0  IDataChannel gains MaxMessageBytes and rite frames are size-checked when a transport is handed over
+             (RiteTransport.EnsureCarriesRiteFrames), so a vessel that cannot carry a legal frame is refused at
+             connect with both numbers named rather than refusing it silently on the wire. A BREAKING change for
+             anyone implementing IDataChannel, which this repository does — see BrowserDataChannel. Also makes
+             DisposeAsync idempotent across five types, one of which (ShrineSession) our consumer hit without ever
+             disposing twice.
       0.3.7  the Conduit's delivery contract, written down after we asked: ordered, never torn, and NOT retried. A
              receiver that lets frames queue past the mux's per-stream limit loses them silently — the send reports
              success and no field in a frame reveals the gap. SiteSession is built around that (it drains rather
@@ -35,7 +41,7 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.5.0</CupriNetVersion>
+    <CupriNetVersion>0.6.0</CupriNetVersion>
     <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
     <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
          properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
