@@ -1,0 +1,37 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NodestarSite</title>
+
+  <!-- Which feed this page is about. The client reads this before it attends, so a site names its own feed rather
+       than every site having to agree on one. -->
+  <meta name="cupri-feed" content="site">
+
+  <!-- The size this page was laid out for. The client fits the page against it rather than assuming. -->
+  <meta name="cupri-design" content="1024x768">
+
+  <style>
+    body { margin: 0; font: 16px system-ui, sans-serif; color: #14141a; background: #f6f7fb; padding: 48px; }
+    h1 { font-size: 40px; margin: 0 0 8px; color: #2244cc; }
+    p { font-size: 18px; line-height: 1.6; }
+    .card { background: #fff; border: 1px solid #dfe3ee; border-radius: 12px; padding: 24px; max-width: 720px; }
+    .ticks { font-size: 48px; font-weight: 700; color: #2244cc; }
+    code { background: #eef1f8; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>NodestarSite</h1>
+
+    <!-- {{ }} is bound by the feed. In a browser the client binds it; over the HTTP gateway the node binds it
+         server-side, so the page is never served with the braces showing. -->
+    <p>{{ greeting }}</p>
+    <p class="ticks">{{ ticks }}</p>
+
+    <p>
+      This page came over CupriNet, not HTTP. Edit <code>l2-wwwroot/index.html</code> and restart to change it,
+      and <code>Program.cs</code> to change what the feed publishes.
+    </p>
+  </div>
+</body>
+</html>

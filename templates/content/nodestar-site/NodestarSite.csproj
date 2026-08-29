@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NodestarSite</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The base package: the node, the site, and the HTTP front. .WebRtc adds the browser on-ramp. -->
+    <PackageReference Include="CupriNet.Nodestar" Version="0.1.0-*" />
+    <PackageReference Include="CupriNet.Nodestar.WebRtc" Version="0.1.0-*" />
+    <!--#if (tor) -->
+    <PackageReference Include="CupriNet.Nodestar.Tor" Version="0.1.0-*" />
+    <!--#endif -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The site itself. Copied beside the binary so `dotnet run` serves it without any path juggling. -->
+    <Content Include="l2-wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

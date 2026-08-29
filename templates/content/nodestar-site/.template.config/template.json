@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Wixely",
+  "classifications": [ "CupriNet", "Web", "P2P", "Nodestar" ],
+  "identity": "CupriNet.Nodestar.Site.CSharp",
+  "groupIdentity": "CupriNet.Nodestar.Site",
+  "name": "Nodestar site",
+  "description": "A CupriNet node that hosts a site at a self-authenticating cupri1… address, served to browsers over WebRTC and to everything else over HTTP.",
+  "shortName": "nodestar-site",
+  "sourceName": "NodestarSite",
+  "defaultName": "NodestarSite",
+  "tags": { "language": "C#", "type": "project" },
+  "preferNameDirectory": true,
+  "symbols": {
+    "network": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "example.chat",
+      "replaces": "NETWORK-NAME",
+      "description": "The Concordium (network) this node joins. Nodes only meet others using the same name."
+    },
+    "moniker": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "my nodestar",
+      "replaces": "NODE-MONIKER",
+      "description": "A human-readable label for this node. Cosmetic; the cupri1… address is the identity."
+    },
+    "tor": {
+      "type": "parameter",
+      "datatype": "bool",
+      "defaultValue": "false",
+      "description": "Add the onion transport, so the site can be served over Tor."
+    }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!tor)", "exclude": [ "TOR.md" ] }
+      ]
+    }
+  ]
+}

@@ -152,7 +152,12 @@ public sealed class NodestarApplication : IAsyncDisposable
         // Relics are not wired up yet (see TODO.md) and the conduit is null unless the site called OnSession. Null
         // is the meaningful answer in both cases rather than an omission: it is what lets the Shrine seal a visitor
         // who opens a session this site does not serve, instead of leaving them waiting on a reply.
-        _node.HostShrine(signet, _site.Handler, _site.Feeds, null, _site.Conduit, _options.AdvertiseSiteInLink);
+        // Relics are hashed into their manifests here, once, so a fetch later is a lookup rather than a hash of
+        // whatever the file happens to be at that moment — which is what lets a visitor verify a blob before running
+        // it. A site naming none passes null, and a visitor asking for one is refused rather than left waiting.
+        var relics = _site.BuildRelics(suite);
+
+        _node.HostShrine(signet, _site.Handler, _site.Feeds, relics, _site.Conduit, _options.AdvertiseSiteInLink);
 
         // A port of this node's own for Pilgrims, when asked for. Upstream added it in CupriNet 0.5.0 precisely so
         // that reaching a site over TCP stops requiring every consumer to write the same accept loop — ours was the
@@ -171,6 +176,8 @@ public sealed class NodestarApplication : IAsyncDisposable
             _log.LogInformation("Live feeds: {Feeds}", string.Join(", ", _site.Feeds.Keys));
         if (_site.Conduit is not null)
             _log.LogInformation("Raw sessions: served.");
+        if (relics is not null)
+            _log.LogInformation("Relics: served (bulk content, chunked and verified against a manifest).");
         if (_options.AdvertiseSiteInLink)
             _log.LogInformation("The site's Signet is stamped into this node's link — it is therefore linkable to the node's overlay identity.");
 

@@ -8,6 +8,17 @@ structurally lacks: it **hosts content on L2**. Add the package, plug in what yo
 handler, a live stream, or a raw session), and you get the node, the web front (an intonation page + a served on-ramp
 client, HTTPS / reverse-proxy / IIS / Tor-aware), and the L2 hosting wired together.
 
+```
+dotnet new install CupriNet.Nodestar.Templates
+dotnet new nodestar-site -n MySite --network my.network
+cd MySite && dotnet run
+```
+
+That is a running site: a `cupri1…` address, a page served to browsers over WebRTC and to everything else over
+HTTP, and a live feed bound into it. Open <http://localhost:8080/_nodestar> for the link and QR.
+
+Or by hand:
+
 ```csharp
 using CupriNet.Nodestar;
 
@@ -38,6 +49,38 @@ overlay address, cacheable and swappable like any other static file — and **th
 It builds on CupriNet's core **Shrine** capability (serving content over L2, addressed by a self-authenticating
 `cupri1…` key) — see [`design/nodestar.md`](design/nodestar.md) for the full design, and CupriNet's `design/shrines.md`
 for the protocol.
+
+## What a site may serve, and how big it may be
+
+A site is served over L2, and **every message a rite carries is capped at 192 KiB**. That is not a Nodestar
+preference — it is the size a browser's SCTP association will carry, and it applies wherever a browser can reach,
+which for a site is everywhere.
+
+| You are sending | Cap | If you exceed it |
+|---|---|---|
+| A page or any Oracle response | 192 KiB body | `StaticFileOracleHandler` refuses the file *before reading it*; a handler returning one gets a clear 500 |
+| A feed message (`Feed`) | 192 KiB payload | the rite refuses it on encode, naming the limit |
+| A raw session frame (`OnSession`) | `SiteSession.MaxFrameBytes` | the rite refuses it on encode |
+
+**Read `MaxFrameBytes` rather than hard-coding 192 KiB.** It reports what *this* session will actually accept, and
+that is not the same number on every path.
+
+### Getting past it
+
+The ceiling is on one message, never on the content.
+
+- **Serve it as a relic.** The rite built for exactly this: a named blob travels chunk by chunk on its own stream,
+  every chunk verified against a manifest and the whole file before any bytes are returned — so a client can prove
+  a blob's integrity *before* running it. This is the answer for images, downloads and WASM payloads.
+- **Chunk it yourself over a session.** For a protocol with its own framing, size your chunks against
+  `MaxFrameBytes`. Sequencing and reassembly are yours; the Conduit deliberately offers no help, because
+  `ProtocolId` is yours too.
+
+A practical consequence worth knowing before you design a page: **a Document-tier site is one document.** It carries
+its own `<style>`, because a linked stylesheet costs a second full round trip over a channel where each one is
+expensive — and a large embedded image will meet the ceiling long before the markup does.
+
+CupriNet's `design/transports-and-limits.md` is the reference for where each number comes from and why.
 
 ## Samples
 

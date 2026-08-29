@@ -10,7 +10,18 @@ system, while this one is honest about what a clone actually gets today.
       output (no apphost, so one image runs on every arch), the `dotnet cuprinet-nodestar.dll` entrypoint, and the
       `CUPRINET_NODESTAR_DataDirectory` / `SiteRoot` environment variables all work. **Unverified: the Docker layers
       themselves** — base images, the BuildKit secret mount, the non-root user, the volume.
-- [ ] **Build the image once** and correct whatever the above missed.
+- [x] **Built the image, and ran it.** Docker 29.1.3, 29 Aug 2026. Every line of that Dockerfile was reasoned
+      rather than observed until now; the header records what the first run actually confirmed — the BuildKit secret
+      mount, the private-feed restore, the portable-IL publish, the non-root `app` user, the volume, `/healthz`,
+      `/_nodestar/link.json`, and **Mode 2 serving a bind-mounted site end to end** with a `{{ }}` placeholder
+      binding to empty rather than showing braces. 350 MB.
+
+      Nothing was wrong with it, which is worth recording as plainly as a defect would have been.
+
+      Still unproven and each for its own reason: inbound UDP reaching the container, Mode 1 through a mounted
+      `/client`, and Tor. One environment note is in the Dockerfile so nobody chases it: under Docker inside WSL a
+      container stops cleanly a few seconds after the shell session that started it closes — that is WSL reclaiming
+      the distro, not the node stopping.
 - [ ] **`docker-compose`** — clearnet and onion. The onion variant is now buildable (Tor is wired); it has never run.
 - [ ] **Mode 1 from the container is unverified.** The reference host now serves a browser client from `ClientRoot`,
       and that path is proven outside a container — a bundle in the directory, a real browser, dial through to paint.
@@ -35,8 +46,21 @@ system, while this one is honest about what a clone actually gets today.
       directory, composed a Nodestar from them (`UseWebRtc` + `UseTor` + `ServeCupriFaceClient`), built, ran, and
       answered 200 on both `/` and `/_nodestar/app` — so there is no missing transitive dependency and the client
       package really does carry its bundle. That exercise also found the shutdown bug fixed alongside it.
-- [ ] **`dotnet new nodestar-site` template.** The design's headline promise — "zero → running site in one
-      `dotnet new` + one `dotnet run`" — and the single largest gap between what the README says and what exists.
+- [x] **`dotnet new nodestar-site`.** The README's headline promise, and now a command. `templates/` packs
+      `CupriNet.Nodestar.Templates`; the generated project is a node, a self-contained page, a live feed bound into
+      it, and a `nuget.config` pointing at the feed — `--network`, `--moniker` and `--tor` are its parameters.
+
+      **Proven by running it, and running it is what found the defects.** Installed the pack, generated a project,
+      built it, and started it: three things were wrong that reading could not have shown. The `nuget.config`
+      comment contained `--username`, and an XML comment may not contain `--`, so every generated project failed to
+      restore. `WebPort` was assigned in `Program.cs`, which silently defeats `CUPRINET_NODESTAR_WebPort` — so the
+      template's own parameter was the thing stopping configuration working, and the parameter is gone. And the
+      startup banner hard-coded 8080, so it printed where the site was not.
+
+      One caveat that is not the template's: it floats to `0.1.0-*`, which resolves to **alpha.4** — the newest
+      published — and that predates the Mode-2 gateway binding, so the page serves with `{{ }}` showing. Against
+      the current build the same generated project binds correctly (`served over L2`, ticks counting). It fixes
+      itself the moment anything newer publishes, which is the artifact quota's problem rather than this one's.
 
 ## Not wired up
 
@@ -86,15 +110,23 @@ system, while this one is honest about what a clone actually gets today.
       than restating one site's parts. That is not tidiness: 0.5.0 also selects between several hosted Signets from
       the visitor's blinded target, so passing one site's handler explicitly would quietly answer every visitor as
       that site.
-- [ ] **Hosted apps (the Relic tier).** Now unblocked. A Shrine could name relics through `IRelicSource` and a client
-      could `FetchRelicAsync` a WASM blob, verify it against the manifest, and only then run it — which is the whole
-      point: integrity is proven *before* execution, so a hostile host can fail a fetch but cannot corrupt one. The
-      pieces exist upstream and nothing here calls them yet. `SiteBuilder` would need a `ServeRelics(...)` alongside
-      `ServeStaticFiles`, and the browser client a way to be told which relic to run.
-- [ ] **The 192 KiB page ceiling is undocumented for site authors.** As of 0.3.4 `StaticFileOracleHandler` refuses an
-      over-ceiling file at the rite, with a message naming the Relic rite, instead of failing later at the transport.
-      That is a much better failure — but nothing in this repository's docs tells someone dropping a large image into
-      `l2-wwwroot` that a ceiling exists at all, so they meet it as a surprise rather than a constraint.
+- [x] **Relics are served.** `SiteBuilder.ServeRelics(directory)`, `ServeRelic(name, bytes)`, or your own
+      `IRelicSource`. Built at startup rather than per request, because hashing a relic into its manifest is what
+      makes the manifest a promise instead of a guess — a file changed on disk afterwards is not picked up until a
+      restart.
+
+      This is the answer to the 192 KiB ceiling, and it buys something a large response never could: every chunk is
+      verified against the manifest as it arrives and the whole file before any bytes are returned, so a visitor can
+      prove a blob's integrity *before* running it. `PilgrimageOverVesselTests` fetches a ~500 KB relic — nearly
+      three frames, so the chunking is actually exercised — over a real Pilgrimage and compares it byte for byte.
+
+      Deferred until the node starts because hashing needs the crypto suite, which is the node's rather than the
+      builder's; the builder holds the intent, the same shape `Feed` uses.
+- [x] **The 192 KiB ceiling is documented for site authors.** README has a section on what a site may serve and
+      how big it may be: the cap per rite, what happens when you exceed it, and the two ways past — serve it as a
+      relic, or chunk it yourself against `MaxFrameBytes` rather than hard-coding a number that differs by path. It
+      also says the thing an author meets first: a Document-tier site is one document, and an embedded image will
+      reach the ceiling long before the markup does.
 
 - [x] **Raw sessions — the README's fourth site option.** `SiteBuilder.OnSession(protocolId, handler)` serves a
       duplex, message-framed pipe for the life of one visitor, over the Conduit rite on vessel stream 4. Asked for in

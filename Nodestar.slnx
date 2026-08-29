@@ -5,6 +5,9 @@
   <Folder Name="/tests/">
     <Project Path="tests/CupriNet.Nodestar.Tests/CupriNet.Nodestar.Tests.csproj" />
   </Folder>
+  <Folder Name="/templates/">
+    <Project Path="templates/CupriNet.Nodestar.Templates.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/CupriNet.Nodestar/CupriNet.Nodestar.csproj" />
     <Project Path="src/CupriNet.Nodestar.WebRtc/CupriNet.Nodestar.WebRtc.csproj" />

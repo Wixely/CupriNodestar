@@ -33,6 +33,7 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
     private VesselListener _listener = null!;
     private CupriNet.Abstractions.Sigil _siteSignet;
     private CupriNet.Abstractions.Concordium _network;
+    private byte[] _relic = [];
     private volatile bool _handlerRan;
 
     public async Task InitializeAsync()
@@ -55,6 +56,12 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
         builder.Node.ShrinePort = 0;
 
         builder.Site.Serve(_ => OracleResponse.Text("<h1>hello</h1>", "text/html"));
+
+        // Deliberately larger than one rite frame. A relic that fitted in a single message would prove nothing:
+        // the chunking, and the manifest that makes it verifiable, are the whole point of the rite.
+        _relic = new byte[500_000];
+        Random.Shared.NextBytes(_relic);
+        builder.Site.ServeRelic("app/big.bin", _relic);
         builder.Site.OnSession(ProtocolId, async (session, cancellationToken) =>
         {
             _handlerRan = true;
@@ -99,6 +106,43 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
     }
 
     private static CancellationTokenSource Deadline() => new(TimeSpan.FromSeconds(30));
+
+    /// <summary>
+    /// A relic fetched whole, over the same visit, and verified on the way.
+    ///
+    /// <para>This is the answer to the 192 KiB ceiling, so the payload here is deliberately ~500 KB — nearly three
+    /// frames. It cannot arrive as one message, which means what is being tested is the chunking and the manifest
+    /// rather than a large-ish response.</para>
+    ///
+    /// <para>The equality assertion is doing more work than it looks: <c>FetchRelicAsync</c> verifies every chunk
+    /// against the manifest as it arrives and the whole file before returning any bytes, so bytes coming back at all
+    /// means the verification passed. That property — integrity proven <i>before</i> anything runs the content — is
+    /// the reason to use a relic rather than a big Oracle body.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_relic_is_fetched_whole_and_verified()
+    {
+        using var deadline = Deadline();
+        await using var shrine = await VisitAsync(deadline.Token);
+
+        var fetched = await shrine.FetchRelicAsync("app/big.bin", cancellationToken: deadline.Token);
+
+        Assert.Equal(_relic.Length, fetched.Length);
+        Assert.Equal(_relic, fetched);
+        Assert.True(fetched.Length > ConduitCodec.MaxPayloadBytes,
+            "the relic must exceed one rite frame or this proves nothing about chunking");
+    }
+
+    /// <summary>A relic this site does not name is refused, rather than answered with something else or with silence.</summary>
+    [Fact]
+    public async Task An_unknown_relic_is_refused()
+    {
+        using var deadline = Deadline();
+        await using var shrine = await VisitAsync(deadline.Token);
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => shrine.FetchRelicAsync("app/not-a-thing.bin", cancellationToken: deadline.Token));
+    }
 
     /// <summary>
     /// The path with no accept loop in it at all — CupriNet 0.5.0's own Shrine listener, reached by dialling.

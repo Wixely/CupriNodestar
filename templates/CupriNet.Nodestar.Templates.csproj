@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The template pack behind `dotnet new nodestar-site`.
+
+    The README's headline promise is "zero → running site in one dotnet new + one dotnet run", and until this existed
+    that was the largest gap between what this repository said and what it had. A template is the only form of that
+    promise a person can actually run.
+
+    Not a code project: it carries content and packs it. IncludeBuildOutput=false because there is no assembly here,
+    and IncludeContentInPack with the template layout is what makes the engine find it.
+  -->
+
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>CupriNet.Nodestar.Templates</PackageId>
+    <Title>Nodestar site templates</Title>
+    <Description>Templates for CupriNet Nodestar: a node that hosts a site on L2, served over HTTP and WebRTC.</Description>
+    <PackageTags>dotnet-new;templates;cuprinet;nodestar;p2p</PackageTags>
+
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!-- There is no assembly here, so there are no symbols to ship. Left on (the repository default) it fails the
+         pack outright with NU5017: a symbol package with nothing in it. -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <SymbolPackageFormat></SymbolPackageFormat>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Everything under content/ ships verbatim. Excluding bin/obj matters because a template that has been run
+         locally would otherwise pack somebody's build output as part of the template. -->
+    <!-- PackagePath is explicit because ContentTargetFolders would otherwise prepend "content" to a path that
+         already begins with it, and the engine looks for content/<template>/.template.config — not content/content. -->
+    <Content Include="content\**\*"
+             Exclude="content\**\bin\**;content\**\obj\**"
+             PackagePath="content\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Remove="**\*" />
+  </ItemGroup>
+
+</Project>

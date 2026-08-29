@@ -88,10 +88,32 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 # step most deployments do not need. Mounting a bundle at /client is the answer instead, and it has the better
 # property anyway: the client stays swappable, and this image never carries a renderer it was not asked to run.
 #
-# ---- what has NOT been verified ----
+# ---- what the first build actually proved ----
 #
-# THIS IMAGE HAS NEVER BEEN BUILT. There is no Docker on the development machine and no CI job builds it, so every
-# line above is reasoned rather than observed. Treat a first build as a first test.
+# BUILT AND RUN, 29 Aug 2026, on Docker 29.1.3. Every line above was reasoned rather than observed until then; what
+# follows is what the first run confirmed, because "it built" and "it works" are different claims.
+#
+#   the BuildKit secret mount     restore authenticated against the private feed and the token is absent from
+#                                 image history, which is the whole reason it is a secret and not an ARG
+#   the portable-IL publish       one /app, no RID, no apphost
+#   the `app` user and chown      the container runs as uid 1654(app), not root
+#   Mode 2 end to end             a site bind-mounted at /site is served at / with X-Nodestar-Mode: gateway, and a
+#                                 {{ }} placeholder with no feed behind it binds to empty rather than showing braces
+#   /healthz and /_nodestar       both answer; link.json returns the node's link as JSON
+#   size                          350 MB
+#
+# Still unverified, and each for its own reason:
+#
+#   INBOUND UDP to the container. The WebRTC endpoint binds and logs, but nothing has dialled it from outside, so
+#   whether a browser can reach it depends on a network path no test here has exercised.
+#   MODE 1 from a mounted /client. The bind mount and the app user's read access to it are untried; Mode 1 itself is
+#   proven outside a container by the browser gate.
+#   TOR. Compiled in and wired, but no circuit has ever been opened from anywhere in this repository.
+#   DOCKER COMPOSE, and any multi-container arrangement.
+#
+# One environment note, so the next person does not chase it: run under Docker inside WSL, a container stops a few
+# seconds after the shell session that started it closes — cleanly, SIGTERM and exit 0. That is WSL reclaiming the
+# distro, not the node deciding to stop. A container held open by a live session ran indefinitely.
 #
 # Tor is compiled in and wired (CUPRINET_NODESTAR_EnableTor / _TorOnly reach a real onion transport), but no circuit
 # has ever been opened from anywhere in this repository — the development machine has no Tor access. Bootstrapping

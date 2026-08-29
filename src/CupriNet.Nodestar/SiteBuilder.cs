@@ -1,3 +1,4 @@
+using CupriNet.Alembic;
 using CupriNet.Rites;
 
 namespace CupriNet.Nodestar;
@@ -12,6 +13,9 @@ namespace CupriNet.Nodestar;
 public sealed class SiteBuilder
 {
     private readonly Dictionary<string, IAuspiceSource> _feeds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _relics = new(StringComparer.Ordinal);
+    private Func<ICryptoSuite, IRelicSource>? _relicSource;
+    private string? _relicRoot;
     private IOracleHandler? _handler;
     private IConduitHandler? _conduit;
 
@@ -26,7 +30,42 @@ public sealed class SiteBuilder
     internal IConduitHandler? Conduit => _conduit;
 
     /// <summary>True once anything has been configured — used to warn about a node that serves nothing.</summary>
-    internal bool IsConfigured => _handler is not null || _feeds.Count > 0 || _conduit is not null;
+    internal bool IsConfigured =>
+        _handler is not null || _feeds.Count > 0 || _conduit is not null || HasRelics;
+
+    private bool HasRelics => _relicSource is not null || _relics.Count > 0 || _relicRoot is not null;
+
+    /// <summary>
+    /// Builds the relic source, or null when this site names none.
+    ///
+    /// <para>Deferred until the node starts because hashing a relic needs the crypto suite, and the suite is the
+    /// node's rather than the builder's. It is the same shape a feed uses — the builder holds the intent, the
+    /// application supplies what only it has.</para>
+    /// </summary>
+    internal IRelicSource? BuildRelics(ICryptoSuite suite)
+    {
+        if (_relicSource is not null) return _relicSource(suite);
+        if (!HasRelics) return null;
+
+        var source = new StaticRelicSource(suite);
+
+        foreach (var (name, content) in _relics)
+            source.Add(name, content);
+
+        if (_relicRoot is not null)
+        {
+            var root = Path.GetFullPath(_relicRoot);
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                // Forward slashes and a path relative to the root, so a relic is named the way a visitor asks for it
+                // rather than the way this filesystem happens to spell it.
+                var name = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
+                source.Add(name, File.ReadAllBytes(file));
+            }
+        }
+
+        return source;
+    }
 
     // A site with no handler answers 404 rather than dropping the Pilgrimage: a visitor who reached us should learn
     // that there is nothing here, not sit waiting on a session that will never answer.
@@ -83,6 +122,46 @@ public sealed class SiteBuilder
         ArgumentNullException.ThrowIfNull(source);
         _feeds[name] = new DelegateAuspiceSource((publisher, cancellationToken) =>
             EmanateAsync(source, publisher, cancellationToken));
+        return this;
+    }
+
+    /// <summary>
+    /// Publishes named relics: bulk content, chunked and hash-verified, fetched over the same visit.
+    ///
+    /// <para><b>This is the answer to the 192 KiB ceiling.</b> Every rite caps one message at that size, because
+    /// that is what a browser's SCTP association carries — so an image, a download or a WASM payload cannot travel
+    /// as a page or a feed message. A relic travels chunk by chunk on its own stream instead, which also keeps it
+    /// from stalling the page fetch beside it.</para>
+    ///
+    /// <para><b>And it buys something a large response never could:</b> every chunk is verified against a manifest
+    /// as it arrives, and the whole file before any bytes are returned. A visitor can prove a blob's integrity
+    /// <i>before</i> running it — so a hostile host can fail a fetch but cannot corrupt one.</para>
+    ///
+    /// <para>Read at startup, not per request: relics are hashed into a manifest when the node starts, so a file
+    /// changed on disk afterwards is not picked up until it restarts. That is what makes the manifest a promise
+    /// rather than a guess.</para>
+    /// </summary>
+    /// <param name="rootDirectory">A directory whose files become relics, named by their path relative to it.</param>
+    public SiteBuilder ServeRelics(string rootDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
+        _relicRoot = rootDirectory;
+        return this;
+    }
+
+    /// <summary>Publishes one relic from memory, under a name a visitor fetches it by.</summary>
+    public SiteBuilder ServeRelic(string name, byte[] content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(content);
+        _relics[name] = content;
+        return this;
+    }
+
+    /// <summary>Publishes relics from your own <see cref="IRelicSource"/>, in the rite's own names.</summary>
+    public SiteBuilder ServeRelics(Func<ICryptoSuite, IRelicSource> source)
+    {
+        _relicSource = source ?? throw new ArgumentNullException(nameof(source));
         return this;
     }
 
