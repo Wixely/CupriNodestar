@@ -255,6 +255,12 @@ public sealed class NodestarApplication : IAsyncDisposable
     /// accepting the connection; this owns what the site answers with. Pin <see cref="SiteAddress"/> from the other
     /// end — the Signet, not the node's Sigil — because this time it is genuinely the site that answers.</para>
     ///
+    /// <para><b>This is the intended path, not a workaround.</b> CupriNet's <c>design/transports-and-limits.md</c>
+    /// now says so directly: a Shrine accepts any vessel, but the vessel has to be handed to
+    /// <c>AcceptPilgrimageOverVesselAsync</c> by a caller who owns it, and a node's L1 listen port does not serve
+    /// Shrines. It also names the symptom above — a visit that pairs you as an overlay peer while every rite goes
+    /// quiet — as the single most misread symptom in the stack, which is exactly how it reached us.</para>
+    ///
     /// <para>Returns when that Pilgrim's visit ends. Run it per accepted vessel; it does not loop.</para>
     /// </summary>
     public Task AcceptPilgrimageAsync(IVessel vessel, CancellationToken cancellationToken = default)
