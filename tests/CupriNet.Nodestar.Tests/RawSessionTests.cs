@@ -36,7 +36,13 @@ public class RawSessionTests
         var site = new ConduitSession(siteChannel, ConduitPadding.None, ConduitCodec.MaxPayloadBytes);
         var visitor = new ConduitSession(visitorChannel, ConduitPadding.None, ConduitCodec.MaxPayloadBytes);
 
-        return (new SiteSession(site, protocolId), visitor, visitorChannel);
+        var session = new SiteSession(site, protocolId);
+
+        // Started here because SiteBuilder starts it before the handler runs. Leaving it to the first ReceiveAsync
+        // would test a path production never takes, and would quietly hide the very queueing this guards against.
+        session.Start(CancellationToken.None);
+
+        return (session, visitor, visitorChannel);
     }
 
     private static ConduitFrame Frame(uint protocolId, string text) => new()
@@ -226,6 +232,71 @@ public class RawSessionTests
 
         Assert.True((await visitor.ReceiveAsync(deadline.Token))!.IsSealed);
         Assert.Null(await visitor.ReceiveAsync(deadline.Token));
+    }
+
+    /// <summary>
+    /// Frames that arrive before the handler asks for them are kept, in order.
+    ///
+    /// <para>This is what the background drain buys. The Conduit does not retry: a receiver that lets frames queue
+    /// on the rite loses the ones past the mux's limit silently — the send reports success and nothing in a frame
+    /// reveals the gap. Taking them off the rite immediately is what keeps that queue empty, so a handler that is
+    /// briefly busy costs latency rather than data.</para>
+    /// </summary>
+    [Fact]
+    public async Task Frames_that_arrive_before_the_handler_asks_are_kept_in_order()
+    {
+        using var deadline = Deadline();
+        var (site, visitor, _) = Connect();
+
+        for (var i = 0; i < 50; i++)
+            await visitor.SendAsync(Frame(Banter, $"F{i}"), deadline.Token);
+
+        // Only now does anyone read. Before the drain, these sat on the rite waiting to be dropped.
+        for (var i = 0; i < 50; i++)
+            Assert.Equal($"F{i}", Encoding.UTF8.GetString((await site.ReceiveAsync(deadline.Token))!));
+    }
+
+    /// <summary>
+    /// A handler that never reads ends the session loudly instead of quietly losing frames.
+    ///
+    /// <para>The failure this pins is the one the rite has on its own: past the mux's per-stream limit, further
+    /// frames are dropped with the sender's write still reporting success, and neither end can tell. A protocol
+    /// that silently loses messages does not fail, it corrupts. So the session ends and says why — and it does so
+    /// earlier and more cheaply than the transport would have.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_handler_that_never_reads_fails_loudly_rather_than_losing_frames()
+    {
+        using var deadline = Deadline();
+        var (site, visitor, _) = Connect();
+
+        // Comfortably past the backlog, with nothing reading.
+        for (var i = 0; i < 400; i++)
+            await visitor.SendAsync(Frame(Banter, $"F{i}"), deadline.Token);
+
+        // Wait for the drain to notice rather than racing it: reading too early would simply keep up with the
+        // sender and never overrun, which would make this test pass for the wrong reason.
+        while (site.EndReason != "receiver fell behind")
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            await Task.Delay(20, deadline.Token);
+        }
+
+        // Everything it managed to hold is still delivered, in order, before the failure is reported.
+        var kept = 0;
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            while (true)
+            {
+                var frame = await site.ReceiveAsync(deadline.Token);
+                if (frame is null) Assert.Fail("the session ended quietly; falling behind must not look like a close");
+                Assert.Equal($"F{kept}", Encoding.UTF8.GetString(frame));
+                kept++;
+            }
+        });
+
+        Assert.Contains("fell behind", error.Message);
+        Assert.True(kept > 0, "nothing was delivered at all — the drain never ran");
     }
 
     /// <summary>

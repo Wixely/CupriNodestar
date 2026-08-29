@@ -189,6 +189,19 @@ system, while this one is honest about what a clone actually gets today.
       lands depends on the zoom the page was fitted at — computing that in the test would be reimplementing the
       renderer's arithmetic, and getting it subtly wrong looks exactly like the feature being broken.
 
+      **Delivery is ordered and never torn, but not retried** — CupriNet 0.3.7 wrote that contract down after we
+      asked. A receiver that lets frames queue past the mux's per-stream limit loses the ones past it *silently*:
+      the sender's write reports success and no field in a frame reveals the gap. Only the Epistle has a Vigil.
+
+      `SiteSession` is built around that rather than passing it on. A background reader takes frames off the rite as
+      fast as they arrive, so the queue that drops silently stays empty; if the author's handler falls behind it is
+      *our* bounded queue that fills, and the session ends with an exception naming the problem. A protocol that
+      quietly loses messages does not fail, it corrupts — so falling behind is loud, and it happens earlier and more
+      cheaply than the transport's own limit would.
+
+      That also means the handler shape first shipped here was the wrong one to advertise: receive, process inline,
+      receive again is exactly what fills the queue. Take the frame and come straight back; do the work elsewhere.
+
       **Keys are forwarded and nothing consumes them yet**, which is a CupriFace boundary rather than a gap here.
       Measured against 0.3.0 and 0.5.0: an `<input>` in ordinary markup is not focusable, and `DispatchKey` answers
       false for the arrows, space and End even with the pointer over a scrollable region. The client therefore only

@@ -108,7 +108,15 @@ public sealed class SiteBuilder
     {
         ArgumentNullException.ThrowIfNull(handler);
         _conduit = new DelegateConduitHandler((conduit, cancellationToken) =>
-            AttendAsync(handler, new SiteSession(conduit, protocolId), cancellationToken));
+        {
+            var session = new SiteSession(conduit, protocolId);
+
+            // Draining starts BEFORE the handler runs, not on its first receive. Frames arrive from the moment the
+            // conduit is open, and anything that queues on the rite before someone reads is exactly what gets
+            // dropped without a word.
+            session.Start(cancellationToken);
+            return AttendAsync(handler, session, cancellationToken);
+        });
         return this;
     }
 
