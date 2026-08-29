@@ -197,10 +197,23 @@ system, while this one is honest about what a clone actually gets today.
       grace timer, rather than waiting ~30s for ICE consent freshness to expire), then a backoff that re-fetches the
       link over HTTP before dialling. The re-fetch is mandatory, not an optimisation: a restarted node regenerates
       its ICE credentials and DTLS certificate, so the link a page booted with is permanently dead.
-- [ ] **A pasted link cannot be reconnected to.** Auto-reconnect only works for the node that served the page,
-      because refreshing a link means an HTTP fetch and the page has an HTTP relationship with its origin alone.
-      When a node reached by pasted link restarts, the address bar is the only way back. A node could plausibly
-      serve links for peers it knows, which would close this — it is a design question, not an oversight.
+- [~] **A pasted link cannot be reconnected to — softened, and deliberately not solved.** Auto-reconnect works only
+      for the node that served the page: a restarted node regenerates its ICE credentials and DTLS fingerprint, so
+      the link that reached it is permanently dead, and the only way to get a fresh one is an HTTP fetch — which this
+      page can do with its origin and nowhere else.
+
+      Two things now blunt it. **Back** returns to wherever the visitor came from, so a dead node is no longer a dead
+      end. And the link that just ended is **put back in the address bar**, so returning once the node is up is one
+      click rather than a hunt for a link the visitor may no longer have. The page refuses to overwrite anything
+      already typed, so the suggestion can never cost an edit in progress.
+
+      **The obvious fix is declined on purpose.** A node could serve links for peers it knows — it is in the overlay
+      and Constellation already draws that map. But asking node A for node B's link tells A exactly which site you
+      are about to visit, and "nobody else learns of the visit" is the property the whole no-signalling design exists
+      to protect. Misdirection is not the risk (the Pilgrimage pins the Signet, so a substituted node fails the
+      handshake) — disclosure is. It would also work only sometimes, because A's record of B is useful only if it was
+      refreshed after B restarted, which is exactly the moment it will not have been. The real answer is L1 roaming,
+      and a Pilgrim skips the overlay join by design, which is what makes a visitor leave no trace.
 
 ## Infrastructure
 

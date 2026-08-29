@@ -93,9 +93,14 @@ static async Task BrowseAsync()
             continue;
         }
 
+        // The link that just ended goes back into the address bar. This is the one case the client cannot recover
+        // from by itself — see BrowserNavigation.SuggestLink — so the least it can do is keep the way back to hand
+        // rather than leaving the visitor to find the link again.
+        BrowserNavigation.SuggestLink(link);
+
         BrowserNavigation.Status(history.Count > 0
-            ? "idle — paste a link to visit another node, or go back"
-            : "idle — paste an intonation link to visit another node");
+            ? "idle — send that link again when the node is back, or go back"
+            : "idle — send that link again when the node is back, or paste another");
 
         var idle = await WaitForDepartureAsync();
 

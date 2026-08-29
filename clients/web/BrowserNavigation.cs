@@ -23,6 +23,28 @@ internal static unsafe partial class BrowserNavigation
     [LibraryImport("js", EntryPoint = "cupri_status")]
     private static partial void SetStatus(IntPtr utf8);
 
+    [LibraryImport("js", EntryPoint = "cupri_suggest_link")]
+    private static partial void SuggestLinkCore(IntPtr utf8);
+
+    /// <summary>
+    /// Offers a link back into the address bar, for the visitor to send again if they want it.
+    ///
+    /// <para>A node reached by a pasted link cannot be reconnected to automatically: a restarted node regenerates
+    /// its ICE credentials and DTLS fingerprint, so the link that reached it is permanently dead, and the only way
+    /// to obtain a fresh one is an HTTP fetch — which this page can do with its origin and nowhere else. So the
+    /// client genuinely cannot get back on its own.</para>
+    ///
+    /// <para>What it can do is not make the visitor go and find the link again. Putting the dead one back in the
+    /// field turns "hunt for wherever that link came from" into one click once the node returns. The page refuses
+    /// to overwrite anything already typed there, so a suggestion can never cost an edit in progress.</para>
+    /// </summary>
+    public static void SuggestLink(string link)
+    {
+        var utf8 = Encoding.UTF8.GetBytes(link + '\0');
+        fixed (byte* pointer = utf8)
+            SuggestLinkCore((IntPtr)pointer);
+    }
+
     [LibraryImport("js", EntryPoint = "cupri_take_back")]
     private static partial int TakeBack();
 

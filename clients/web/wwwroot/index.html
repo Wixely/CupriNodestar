@@ -157,6 +157,15 @@
       // Driven by the module, because only it knows what the history holds.
       globalThis.__cupri.setCanGoBack = (can) => { backButton.disabled = !can; };
 
+      // The module offering a link back into the address bar after a visit ends.
+      //
+      // NEVER over what someone is typing. A suggestion that overwrites a half-pasted link is worse than no
+      // suggestion, and the visitor cannot get back what it replaced.
+      globalThis.__cupri.suggest = (link) => {
+        const field = document.getElementById('link');
+        if (!field.value.trim()) field.value = link;
+      };
+
       document.getElementById('go').addEventListener('submit', (e) => {
         e.preventDefault();
         const field = document.getElementById('link');

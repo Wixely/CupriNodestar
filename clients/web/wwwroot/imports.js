@@ -405,6 +405,13 @@ mergeInto(LibraryManager.library, {
     if (g && typeof g.setCanGoBack === 'function') g.setCanGoBack(!!can);
   },
 
+  // Offers a link back into the address bar. The page decides whether to take it — it will not overwrite typing.
+  cupri_suggest_link__deps: ['$cupri'],
+  cupri_suggest_link: function (ptr) {
+    const g = globalThis.__cupri;
+    if (g && typeof g.suggest === 'function') g.suggest(UTF8ToString(ptr));
+  },
+
   // Chrome status, written by the client rather than by any site — see index.html for why that separation matters.
   cupri_status__deps: ['$cupri'],
   cupri_status: function (ptr) {
