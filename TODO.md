@@ -150,12 +150,14 @@ system, while this one is honest about what a clone actually gets today.
       derive from one `Zoom()`, and if only one read the declaration the pointer test would start missing what it
       can plainly see.
 
-- [~] **Horizontal overflow at narrow widths — mitigated, not fixed.** A `cupri1…` address is ~62 characters with no
-      break opportunity and nothing can break it: `word-break`, `overflow-wrap` and `word-wrap` are all no-ops in
-      CupriFace 0.2.11 ([CupriFace#59](https://github.com/Wixely/CupriFace/issues/59)). Hybrid zoom hides it, because
-      the layout width never falls below the 1024px design width — the page scales down instead of reflowing
-      narrower. The underlying inability to break a long token is untouched, and would resurface the moment a site
-      opted out of scaling.
+- [x] **Horizontal overflow at narrow widths — fixed upstream, and this entry was stale.** A `cupri1…` address is
+      ~62 characters with no break opportunity, and `word-break` / `overflow-wrap` were no-ops in CupriFace 0.2.11
+      ([CupriFace#59](https://github.com/Wixely/CupriFace/issues/59)). They work on **0.3.0**, which this repository
+      already pins: a 62-character address in a 200px box now wraps and keeps its ink inside the box, measured with a
+      render probe rather than taken from a changelog.
+
+      Recorded because the entry claimed otherwise for several versions. A note that something is broken is worth
+      re-testing on a bump; carrying one that has quietly become false is how a workaround outlives its reason.
 - [~] **Scrolling works within a page; a whole page still scales rather than scrolls.** The wheel now reaches the
       document, so a scrollable region moves and repaints — verified in Chromium. What hybrid zoom still does is
       scale a tall PAGE down to fit rather than letting it scroll, so a page far taller than the viewport shrinks
@@ -224,8 +226,14 @@ system, while this one is honest about what a clone actually gets today.
       moved to a socket-free `CupriNet.Shrine` package beside a static `Pilgrimage.OverVesselAsync`, with the
       namespace kept and a `TypeForwardedTo` so nothing downstream had to be renamed. `BrowserPilgrim.cs` is deleted:
       there is one implementation of the handshake again.
-- [ ] **[CupriFace#51](https://github.com/Wixely/CupriFace/issues/51)** — `repeat(auto-fill, minmax(…))` collapses
-      grid tracks. Worked around with flex wrap; no action needed here unless it is fixed.
+- [x] **[CupriFace#51](https://github.com/Wixely/CupriFace/issues/51)** — `repeat(auto-fill, minmax(…))` collapsed
+      grid tracks on 0.2.11. It lays out correctly on **0.3.0**, verified by a render probe: three cards in a 400px
+      grid span the full width instead of piling into a sliver. **#63** (the two-keyword `transform-origin`) is fixed
+      there too — both keyword forms now put the scale origin in the same place.
+
+      The Constellation sample still uses flex wrap where it wanted a grid. That is now a choice rather than a
+      workaround; the comment in its markup still calls it the latter, and the layout has no visual test behind it,
+      so it is worth changing deliberately rather than in passing.
 - [x] **[CupriNet#3](https://github.com/Wixely/CupriNet/issues/3)** — done, in CupriNet **0.3.6**. `ConduitHost`,
       `IConduitHandler`, `DelegateConduitHandler`, a fourth `HostShrine` overload and `ShrineSession.Conduits`, in
       `CupriNet.Shrine` so a WASM build reaches them. `OnSession` is built on it.
