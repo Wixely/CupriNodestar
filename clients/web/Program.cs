@@ -198,6 +198,7 @@ static async Task<Departure> VisitAsync(string link, BouncyCastleSuite suite)
 
     await using var channel = await BrowserDataChannel.ConnectAsync(intonation, CancellationToken.None);
     Console.WriteLine("[cupri] datachannel open");
+    Console.WriteLine($"[cupri] sctp negotiated max message {BrowserDataChannel.NegotiatedMaxMessageBytes} bytes");
 
     // From here down, nothing browser-specific remains: the DataChannel becomes a Vessel and the same protocol
     // code the node runs takes over — which is the entire reason to compile C# to wasm rather than reimplement it.

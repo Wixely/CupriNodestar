@@ -31,6 +31,20 @@ internal sealed partial class BrowserDataChannel : IDataChannel
     [LibraryImport("js", EntryPoint = "cupri_state")]
     private static partial int State();
 
+    [LibraryImport("js", EntryPoint = "cupri_sctp_max")]
+    private static partial int SctpMax();
+
+    /// <summary>
+    /// The largest message this association negotiated, or 0 before the channel opens.
+    ///
+    /// <para>Worth logging because it is not the same number as a rite's ceiling, and only one of them is a
+    /// constant. The rite advertises 192 KiB everywhere; what a DataChannel will actually carry is whatever the two
+    /// ends agreed — this node offers 256 KiB, so the two happen to be compatible here, but a peer or middlebox
+    /// negotiating the 64 KiB interoperable floor would refuse a frame the rite called legal. The vessel does not
+    /// fragment, so nothing between them would fix it up. See CupriNodestar#4.</para>
+    /// </summary>
+    public static int NegotiatedMaxMessageBytes => SctpMax();
+
     [LibraryImport("js", EntryPoint = "cupri_seed")]
     private static partial int SeedLink(IntPtr buffer, int capacity);
 

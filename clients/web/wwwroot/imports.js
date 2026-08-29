@@ -28,6 +28,9 @@ mergeInto(LibraryManager.library, {
     inputAttached: false,
     cursor: '',
 
+    // What the SCTP association negotiated as its largest message, or 0 before the channel opens.
+    sctpMax: 0,
+
     // Whether the DOCUMENT wants keys, reported by the managed side from the engine's own focus state.
     //
     // This gates preventDefault, and getting it wrong is a real cost either way. Swallowing keys the document does
@@ -240,7 +243,14 @@ mergeInto(LibraryManager.library, {
       ch.binaryType = 'arraybuffer';
       cupri.channel = ch;
 
-      ch.onopen = function () { cupri.state = 1; };
+      ch.onopen = function () {
+        cupri.state = 1;
+        // The size THIS association actually negotiated, rather than the one the rite advertises. They are not the
+        // same question: the rite's ceiling is a constant, and what a DataChannel will carry is whatever the two
+        // ends agreed — our node offers a=max-message-size:262144, but a different peer, stack or middlebox may
+        // agree far less. See CupriNodestar#4; a vessel that does not fragment makes this the number that matters.
+        try { cupri.sctpMax = (pc.sctp && pc.sctp.maxMessageSize) | 0; } catch (e) { cupri.sctpMax = 0; }
+      };
       ch.onclose = function () { console.log('[cupri] datachannel closed'); if (cupri.state !== 2) cupri.state = 3; };
       ch.onerror = function (e) { cupri.fail('datachannel: ' + (e && e.message ? e.message : 'error')); };
       ch.onmessage = function (e) { cupri.inbox.push(new Uint8Array(e.data)); };
@@ -292,6 +302,10 @@ mergeInto(LibraryManager.library, {
       cupri.fail(e);
     }
   },
+
+  // The negotiated SCTP maximum message size, in bytes, or 0 if not yet known.
+  cupri_sctp_max__deps: ['$cupri'],
+  cupri_sctp_max: function () { return cupri.sctpMax | 0; },
 
   // 0 connecting, 1 open, 2 failed, 3 closed.
   cupri_state__deps: ['$cupri'],

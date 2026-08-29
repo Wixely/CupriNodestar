@@ -122,6 +122,42 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// The association carries a frame as large as the rites say is legal.
+    ///
+    /// <para>Two different numbers meet on this path and only one of them is a constant. A rite advertises 192 KiB
+    /// everywhere, whatever it is running over; what a DataChannel will carry is whatever the two ends negotiated.
+    /// <c>DataChannelVessel</c> emits one channel message per frame and never fragments, so nothing in between
+    /// reconciles them — if the negotiated size were the smaller, a payload the rite called legal would be refused
+    /// by the transport, and the ceiling a caller is told to read would be a lie on exactly this path.</para>
+    ///
+    /// <para>It holds here because the node offers <c>a=max-message-size:262144</c> and Chromium agrees to it. That
+    /// is a property of this pairing rather than a guarantee, which is the whole of
+    /// <see href="https://github.com/Wixely/CupriNodestar/issues/4">#4</see> — so it is asserted rather than
+    /// assumed, and this fails the day either end negotiates lower.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_association_carries_a_full_size_rite_frame()
+    {
+        _diagnosticsName = "sctp-negotiated-size";
+        await ExpectLogAsync("sctp negotiated max message");
+
+        string? line;
+        lock (_log) line = _log.LastOrDefault(l => l.Contains("sctp negotiated max message", StringComparison.Ordinal));
+        Assert.NotNull(line);
+
+        var digits = new string(line!.Where(char.IsDigit).ToArray());
+        Assert.True(int.TryParse(digits, out var negotiated), $"could not read a size out of '{line}'");
+
+        // 192 KiB — ConduitCodec.MaxPayloadBytes, and the same figure for the Oracle, Auspice and Relic.
+        const int RiteCeiling = 196608;
+        Assert.True(negotiated >= RiteCeiling,
+            $"the association negotiated {negotiated} bytes but the rites advertise {RiteCeiling}. The vessel does "
+            + "not fragment, so a legal frame would be refused by the transport — see #4.");
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
     /// The pointer reaching the document, observed through the cursor.
     ///
     /// <para>The cursor is the cleanest evidence available. A canvas has no DOM for the site, so the browser cannot
