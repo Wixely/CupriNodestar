@@ -28,6 +28,18 @@ mergeInto(LibraryManager.library, {
     inputAttached: false,
     cursor: '',
 
+    // Whether the DOCUMENT wants keys, reported by the managed side from the engine's own focus state.
+    //
+    // This gates preventDefault, and getting it wrong is a real cost either way. Swallowing keys the document does
+    // nothing with means Tab cannot move focus out of the canvas, space stops scrolling the page and the arrows go
+    // nowhere — the visitor loses browser behaviour and gains nothing. Not swallowing them once a document DOES
+    // have a focused field means every keystroke also scrolls the page underneath.
+    //
+    // Today a plain L2 document never consumes a key: CupriFace 0.3.0 has no focusable text in ordinary markup, so
+    // DispatchKey answers false for everything. Keys are still forwarded, so the client is ready the moment that
+    // changes, and until then the browser keeps its own behaviour.
+    keyCapture: false,
+
     // Called once by $cupri__postset when the module initialises. Nothing to set up here — the state above is the
     // whole of it, and the input listeners attach lazily because the canvas may not exist yet.
     init: function () {},
@@ -133,10 +145,8 @@ mergeInto(LibraryManager.library, {
         if (!edit && !text) return;   // a key the document has no meaning for: leave it to the browser
         cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: mods, t: text });
 
-        // Owned once we have decided to deliver it: otherwise space and the arrows scroll the page underneath, and
-        // Tab walks focus out of the canvas mid-edit. Browser-reserved combinations are already excluded above,
-        // because they produce neither an EditKey nor text.
-        e.preventDefault();
+        // Only claimed while the document has somewhere to put it. See keyCapture above.
+        if (cupri.keyCapture) e.preventDefault();
       });
     },
 
@@ -466,6 +476,12 @@ mergeInto(LibraryManager.library, {
 
     cupri.input = [];
     return offset;
+  },
+
+  // Whether the document has a focused field, so the keydown handler knows whether the key is ours to claim.
+  cupri_set_key_capture__deps: ['$cupri'],
+  cupri_set_key_capture: function (capture) {
+    cupri.keyCapture = !!capture;
   },
 
   // The cursor the document says belongs under the pointer. Set on the canvas so a link looks like a link — the

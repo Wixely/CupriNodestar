@@ -16,6 +16,13 @@ namespace CupriNet.Nodestar.Client;
 /// inbound frames are: calling into wasm from a DOM handler re-enters the runtime at an arbitrary point, and the
 /// renderer is mid-frame often enough for that to matter. Draining between frames keeps the managed side in control
 /// of when a click is handled.</para>
+///
+/// <para><b>Keys are forwarded but nothing consumes them yet.</b> Measured against CupriFace 0.3.0 and 0.5.0: an
+/// <c>&lt;input&gt;</c> in ordinary markup is not focusable, and <c>DispatchKey</c> answers false for the arrows,
+/// space and End even with the pointer over a scrollable region. So a plain L2 document — which is what an L2 site
+/// is — has nowhere to put a keystroke today. The path is here and correct, so the client needs no change when that
+/// stops being true, and until then <see cref="SetKeyCapture"/> keeps the browser's own key behaviour intact rather
+/// than swallowing keys for nothing.</para>
 /// </summary>
 internal static unsafe partial class BrowserInput
 {
@@ -37,6 +44,26 @@ internal static unsafe partial class BrowserInput
 
     [LibraryImport("js", EntryPoint = "cupri_set_cursor")]
     private static partial void SetCursorCore(IntPtr utf8);
+
+    [LibraryImport("js", EntryPoint = "cupri_set_key_capture")]
+    private static partial void SetKeyCaptureCore(int capture);
+
+    /// <summary>Last reported value, so an unchanged state costs nothing per frame.</summary>
+    private static bool _keyCapture;
+
+    /// <summary>
+    /// Tells the page whether the document has somewhere to put a keystroke.
+    ///
+    /// <para>It decides whether the client claims a key or leaves it to the browser. Claiming keys a document does
+    /// nothing with costs the visitor real behaviour — Tab stops moving focus out of the canvas, space stops
+    /// scrolling — for no gain at all.</para>
+    /// </summary>
+    public static void SetKeyCapture(bool capture)
+    {
+        if (capture == _keyCapture) return;
+        _keyCapture = capture;
+        SetKeyCaptureCore(capture ? 1 : 0);
+    }
 
     /// <summary>Drains a frame's input into the document. Called from the pump, before the frame is drawn.</summary>
     public static void Pump()
@@ -89,6 +116,9 @@ internal static unsafe partial class BrowserInput
             // keeps every field aligned for the reads above.
             offset += 32 + ((textBytes + 1 + 3) & ~3);
         }
+
+        // Asked after the frame's input, because a click is what focuses a field in the first place.
+        SetKeyCapture(BrowserRenderer.WantsKeys);
     }
 
     /// <summary>Tells the page which cursor belongs under the pointer.</summary>

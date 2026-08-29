@@ -45,15 +45,15 @@ internal static unsafe partial class BrowserRenderer
     private static partial float CanvasScale();
 
     /// <summary>
-    /// The size a site is authored for, and the reference hybrid zoom fits against.
+    /// The size the current site is authored for, and the reference hybrid zoom fits it against.
     ///
-    /// <para>A desktop CupriFace app declares this on its <c>CupriApp</c>; an arbitrary L2 site has no way to say
-    /// it, so the client has to assume one. 1024×768 is the assumption — wide enough that a page laid out for a
-    /// normal window is not scaled up, tall enough that fitting the height is a meaningful constraint rather than a
-    /// permanent shrink. A site declaring its own would be better, and is worth a convention later.</para>
+    /// <para>Read from the page rather than assumed. A desktop CupriFace app declares this on its <c>CupriApp</c>;
+    /// an L2 site says it with <c>&lt;meta name="cupri-design"&gt;</c>, and falls back to the old assumption when it
+    /// says nothing. The assumption was wrong in both directions — a page written for a narrow column was scaled
+    /// down as though it wanted a thousand pixels, and a wide one was squeezed.</para>
     /// </summary>
-    private const float DesignWidth = 1024f;
-    private const float DesignHeight = 768f;
+    private static float _designWidth = SiteManifest.DefaultDesignWidth;
+    private static float _designHeight = SiteManifest.DefaultDesignHeight;
 
     /// <summary>
     /// Loads the fetched document and paints it once.
@@ -69,6 +69,7 @@ internal static unsafe partial class BrowserRenderer
     public static void Show(string html)
     {
         _document = CupriDocument.Load(html);
+        (_designWidth, _designHeight) = SiteManifest.DesignSize(html);
 
         var assembly = typeof(BrowserRenderer).Assembly;
         foreach (var name in new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" })
@@ -211,7 +212,7 @@ internal static unsafe partial class BrowserRenderer
         //   as though the window were twice as wide and every glyph ends up half its intended physical size. It has
         //   been wrong since the client was written and stayed invisible because headless Chromium reports 1.
         //
-        //   the zoom itself — min(cssWidth/DesignWidth, cssHeight/DesignHeight), so a viewport smaller than the
+        //   the zoom itself — min(cssWidth/designWidth, cssHeight/designHeight), so a viewport smaller than the
         //   design size scales the page down to fit instead of clipping it, and a larger one scales it up.
         var density = CanvasScale();
         if (density <= 0) density = 1f;
@@ -265,7 +266,7 @@ internal static unsafe partial class BrowserRenderer
         var cssHeight = CanvasHeight() / density;
         if (cssWidth <= 0 || cssHeight <= 0) return 1f;
 
-        return Math.Clamp(Math.Min(cssWidth / DesignWidth, cssHeight / DesignHeight), 0.25f, 4f);
+        return Math.Clamp(Math.Min(cssWidth / _designWidth, cssHeight / _designHeight), 0.25f, 4f);
     }
 
     /// <summary>
@@ -339,6 +340,32 @@ internal static unsafe partial class BrowserRenderer
         if (!Ready) return;
         var zoom = Zoom();
         Settle(_document!.DispatchWheel(cssX / zoom, cssY / zoom, deltaY, deltaX));
+    }
+
+    /// <summary>
+    /// Whether the document has a focused text field, and so whether a keystroke belongs to it.
+    ///
+    /// <para>Answered by the engine rather than assumed. As of CupriFace 0.3.0 a plain L2 document never has one —
+    /// an <c>&lt;input&gt;</c> in ordinary markup is not focusable and <c>DispatchKey</c> answers false for
+    /// everything, including the arrows and space — so this is false in practice today. Keys are still forwarded, so
+    /// nothing here has to change when that stops being true.</para>
+    /// </summary>
+    public static bool WantsKeys
+    {
+        get
+        {
+            if (!Ready) return false;
+
+            try
+            {
+                return _document!.GetTextInputState().Focused;
+            }
+            catch (Exception)
+            {
+                // An engine that cannot answer is not an engine that wants the key.
+                return false;
+            }
+        }
     }
 
     public static void Key(string text, int editKey, int mods)

@@ -87,6 +87,10 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                      else, so a fixture that used it could not tell a client reading this declaration from one
                      ignoring it. Every feed assertion below now depends on the declaration being honoured. -->
                 <meta name="cupri-feed" content="gate">
+                <!-- A design size that is NOT the client's default, so the declaration is doing work. It also keeps
+                     the painter and the hit test honest with each other: both derive from the same zoom, and if only
+                     one of them read this the pointer test would start missing what it can plainly see. -->
+                <meta name="cupri-design" content="800x600">
                 <style>
                   /* NO body background, deliberately. A page that asks for nothing is the case the host's canvas
                      clear exists for — and a document that paints its own background hides that bug completely,

@@ -141,6 +141,15 @@ system, while this one is honest about what a clone actually gets today.
       pump repaints when it notices a new size. Previously the buffer was sized once at boot and the browser scaled
       that bitmap to fit, so resizing stretched and blurred the page instead of re-rendering it. CupriFace was never
       the limit here — it re-lays-out at whatever size `Render` is handed.
+- [x] **A site declares the size it was authored for.** `<meta name="cupri-design" content="800x600">`, so hybrid
+      zoom fits a page against what it actually is rather than an assumed 1024×768. The assumption was wrong in both
+      directions: a page written for a narrow column was scaled down as though it wanted a thousand pixels, and a
+      wide one was squeezed. Clamped rather than trusted — a declared zero would be divided by.
+
+      The gate declares a non-default size precisely so the painter and the hit test have to agree about it: both
+      derive from one `Zoom()`, and if only one read the declaration the pointer test would start missing what it
+      can plainly see.
+
 - [~] **Horizontal overflow at narrow widths — mitigated, not fixed.** A `cupri1…` address is ~62 characters with no
       break opportunity and nothing can break it: `word-break`, `overflow-wrap` and `word-wrap` are all no-ops in
       CupriFace 0.2.11 ([CupriFace#59](https://github.com/Wixely/CupriFace/issues/59)). Hybrid zoom hides it, because
@@ -150,8 +159,9 @@ system, while this one is honest about what a clone actually gets today.
 - [~] **Scrolling works within a page; a whole page still scales rather than scrolls.** The wheel now reaches the
       document, so a scrollable region moves and repaints — verified in Chromium. What hybrid zoom still does is
       scale a tall PAGE down to fit rather than letting it scroll, so a page far taller than the viewport shrinks
-      until it is unreadable. That is a policy question about how a site with no declared design size should be
-      fitted, not a missing capability.
+      until it is unreadable. A site can now declare its design size, which is the honest fix for a page that knows
+      its own shape — what remains is what to do with one that does not say, which is a policy question rather than
+      a missing capability.
 - [x] **Input reaches the document.** Pointer, wheel and keyboard are carried into CupriFace, so an L2 site can be
       clicked, scrolled and typed into rather than being a live picture. The cursor is driven from the document's own
       hit test, which is the only affordance a canvas-painted site has — without it a link is indistinguishable from
@@ -166,6 +176,13 @@ system, while this one is honest about what a clone actually gets today.
       and changes the picture. Both SWEEP the canvas rather than aiming at coordinates, because where an element
       lands depends on the zoom the page was fitted at — computing that in the test would be reimplementing the
       renderer's arithmetic, and getting it subtly wrong looks exactly like the feature being broken.
+
+      **Keys are forwarded and nothing consumes them yet**, which is a CupriFace boundary rather than a gap here.
+      Measured against 0.3.0 and 0.5.0: an `<input>` in ordinary markup is not focusable, and `DispatchKey` answers
+      false for the arrows, space and End even with the pointer over a scrollable region. The client therefore only
+      claims a key while the engine reports a focused field — today never — so Tab, space and the arrows keep their
+      browser behaviour instead of being swallowed for nothing. Nothing here changes when the engine gains focusable
+      text; there is simply no way to gate-test it until then.
 - [x] **Back.** The client keeps where the visitor has been and the chrome has a Back control, disabled until there
       is somewhere to go so it never lies about being able to. Each entry remembers whether it was the serving node,
       because going back has to restore the ability to auto-reconnect to that node and must not claim an HTTP
