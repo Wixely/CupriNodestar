@@ -19,6 +19,12 @@
              browser be a Pilgrim without constructing a node that binds sockets.
       0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
              (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+      0.6.1  the .NET WebRTC adapter reports a real MaxMessageBytes too (via CupriWebRTC 0.4.0), so the 0.6.0
+             connect-time check is no longer inert on that side. It still cannot catch a browser that negotiated
+             low: with no signalling, a browser's offer never reaches the node, so the node's figure means "what we
+             will send" rather than "what the pair agreed". The browser end covers that, which is what
+             BrowserDataChannel.MaxMessageBytes is for — between the two ends the case is covered and neither covers
+             it alone.
       0.6.0  IDataChannel gains MaxMessageBytes and rite frames are size-checked when a transport is handed over
              (RiteTransport.EnsureCarriesRiteFrames), so a vessel that cannot carry a legal frame is refused at
              connect with both numbers named rather than refusing it silently on the wire. A BREAKING change for
@@ -41,8 +47,11 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.6.0</CupriNetVersion>
-    <CupriWebRtcVersion>0.3.1</CupriWebRtcVersion>
+    <CupriNetVersion>0.6.1</CupriNetVersion>
+    <!-- 0.4.0 exposes the SCTP association's negotiated message size (CupriWebRTC#1), which is what lets
+         CupriNet's adapter answer IDataChannel.MaxMessageBytes with a real number instead of 0. Required by
+         CupriNet.WebRtc 0.6.1 rather than merely allowed by it. -->
+    <CupriWebRtcVersion>0.4.0</CupriWebRtcVersion>
     <!-- 0.3.0 closes every issue this project filed against the renderer: grid auto-fill/minmax (#51), :root custom
          properties (#53), transform-origin (#54 and its keyword-pair follow-up #63), percentage height on a block
          child (#55), and animating layout properties (#56). Each was re-verified with a headless render probe on
