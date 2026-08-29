@@ -21,7 +21,124 @@ mergeInto(LibraryManager.library, {
     state: 0, // 0 connecting, 1 open, 2 failed
     error: '',
 
+    // Input events queue here for the same reason inbound frames do: calling INTO wasm from a DOM handler re-enters
+    // the runtime at an arbitrary point, and the renderer is mid-frame often enough for that to matter. The managed
+    // side drains this once per frame, so a click is handled between frames rather than during one.
+    input: [],
+    inputAttached: false,
+    cursor: '',
+
+    // Called once by $cupri__postset when the module initialises. Nothing to set up here — the state above is the
+    // whole of it, and the input listeners attach lazily because the canvas may not exist yet.
     init: function () {},
+
+    // Pointer moves COALESCE. A mouse dragged across the canvas produces a move per screen refresh and often more;
+    // every one of them would otherwise cost a hit test and a full document repaint to reach the same hover state
+    // the last one implies. Discrete events (down, up, click, wheel, key) never coalesce — each one means something.
+    pushMove: function (x, y) {
+      const last = cupri.input[cupri.input.length - 1];
+      if (last && last.k === 1) { last.x = x; last.y = y; return; }
+      cupri.input.push({ k: 1, x: x, y: y });
+    },
+
+    // Where the pointer is inside the canvas, in CSS pixels. The managed side converts to the document's own
+    // coordinates, because only it knows the zoom the page was laid out at.
+    at: function (e) {
+      const c = cupri.canvasEl();
+      if (!c) return null;
+      const r = c.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    },
+
+    canvasEl: function () {
+      return (globalThis.__cupri && globalThis.__cupri.canvas) || null;
+    },
+
+    // CupriFace's EditKey. Anything not named here is either a printable character (carried as text) or something
+    // the document has no meaning for, which is left to the browser.
+    editKey: function (k) {
+      switch (k) {
+        case 'Backspace': return 1;
+        case 'Delete': return 2;
+        case 'ArrowLeft': return 3;
+        case 'ArrowRight': return 4;
+        case 'Home': return 5;
+        case 'End': return 6;
+        case 'Enter': return 7;
+        case 'ArrowUp': return 8;
+        case 'ArrowDown': return 9;
+        case 'Tab': return 10;
+        case ' ': return 12;
+        case 'Escape': return 13;
+        default: return 0;
+      }
+    },
+
+    // Attached lazily rather than at init, because the module can finish loading before the page has built the
+    // canvas. Called every frame from cupri_take_input and idempotent, so it simply starts working once the canvas
+    // exists instead of depending on a load order neither side controls.
+    ensureInput: function () {
+      if (cupri.inputAttached) return;
+      const c = cupri.canvasEl();
+      if (!c) return;
+      cupri.inputAttached = true;
+
+      // A canvas is not focusable by default, so without this it never receives a key event. Set here rather than in
+      // the page's markup to keep every input concern in one file.
+      if (!c.hasAttribute('tabindex')) c.tabIndex = 0;
+      c.style.outline = 'none';
+
+      c.addEventListener('pointermove', function (e) {
+        const p = cupri.at(e); if (p) cupri.pushMove(p.x, p.y);
+      });
+
+      c.addEventListener('pointerdown', function (e) {
+        const p = cupri.at(e); if (!p) return;
+        // Focus on press: a site with a text field is unusable if typing goes to the page instead of the canvas.
+        try { c.focus({ preventScroll: true }); } catch (err) { c.focus(); }
+        try { c.setPointerCapture(e.pointerId); } catch (err) { /* not fatal; drags just end at the edge */ }
+        cupri.input.push({ k: 2, x: p.x, y: p.y });
+      });
+
+      c.addEventListener('pointerup', function (e) {
+        const p = cupri.at(e); if (!p) return;
+        try { c.releasePointerCapture(e.pointerId); } catch (err) { /* as above */ }
+        cupri.input.push({ k: 3, x: p.x, y: p.y });
+        // Up THEN click, in that order: the document settles its pressed state before anything activates.
+        cupri.input.push({ k: 4, x: p.x, y: p.y, i0: e.detail || 1 });
+      });
+
+      c.addEventListener('pointercancel', function (e) {
+        const p = cupri.at(e); if (p) cupri.input.push({ k: 3, x: p.x, y: p.y });
+      });
+
+      // passive:false so preventDefault is honoured. Without it the wheel scrolls the PAGE while the document sits
+      // still — the canvas fills the viewport, so that reads as the site ignoring the wheel entirely.
+      c.addEventListener('wheel', function (e) {
+        const p = cupri.at(e); if (!p) return;
+        // deltaMode 1 is lines and 2 is pages; the document wants pixels either way.
+        var scale = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 800 : 1);
+        cupri.input.push({ k: 5, x: p.x, y: p.y, a: e.deltaY * scale, b: e.deltaX * scale });
+        e.preventDefault();
+      }, { passive: false });
+
+      c.addEventListener('keydown', function (e) {
+        var mods = (e.shiftKey ? 1 : 0) | ((e.ctrlKey || e.metaKey) ? 2 : 0);
+        var edit = cupri.editKey(e.key);
+        var text = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey ? e.key : '';
+
+        // Ctrl+A is select-all inside the document rather than in the page around it.
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) { edit = 14; text = ''; }
+
+        if (!edit && !text) return;   // a key the document has no meaning for: leave it to the browser
+        cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: mods, t: text });
+
+        // Owned once we have decided to deliver it: otherwise space and the arrows scroll the page underneath, and
+        // Tab walks focus out of the canvas mid-edit. Browser-reserved combinations are already excluded above,
+        // because they produce neither an EditKey nor text.
+        e.preventDefault();
+      });
+    },
 
     // Tears the current connection down completely.
     //
@@ -260,6 +377,24 @@ mergeInto(LibraryManager.library, {
     return bytes - 1;
   },
 
+  // TAKE semantics again: one press is one step back, however often the module polls. Returns 1 when the visitor
+  // pressed Back since the last call.
+  cupri_take_back__deps: ['$cupri'],
+  cupri_take_back: function () {
+    const g = globalThis.__cupri;
+    if (!g || !g.backPressed) return 0;
+    g.backPressed = false;
+    return 1;
+  },
+
+  // Whether there is anywhere to go back TO. Driven from the module because only it holds the history, and a Back
+  // button that is enabled with an empty history is a button that lies.
+  cupri_set_can_back__deps: ['$cupri'],
+  cupri_set_can_back: function (can) {
+    const g = globalThis.__cupri;
+    if (g && typeof g.setCanGoBack === 'function') g.setCanGoBack(!!can);
+  },
+
   // Chrome status, written by the client rather than by any site — see index.html for why that separation matters.
   cupri_status__deps: ['$cupri'],
   cupri_status: function (ptr) {
@@ -278,6 +413,71 @@ mergeInto(LibraryManager.library, {
       cupri.fail(e);
       return -1;
     }
+  },
+
+  // --- input ---------------------------------------------------------------------------------------------------
+
+  // Drains the queued input events into the supplied buffer and returns the bytes written, 0 when nothing happened,
+  // or -1 if the buffer is too small (the queue is kept, so the next frame retries rather than losing a click).
+  //
+  // Packed rather than JSON: the shape is fixed and this is polled every frame, so there is nothing to gain from a
+  // parser. Each record is eight 32-bit fields followed by its UTF-8 text, padded to a 4-byte boundary:
+  //
+  //   i32 kind   1 move, 2 down, 3 up, 4 click, 5 wheel, 6 key
+  //   i32 i0     click count, or EditKey
+  //   i32 i1     key modifiers
+  //   f32 x, y   CSS pixels from the canvas's top-left
+  //   f32 a, b   wheel delta Y and X, in pixels
+  //   i32 len    text bytes that follow
+  cupri_take_input__deps: ['$cupri'],
+  cupri_take_input: function (ptr, cap) {
+    cupri.ensureInput();
+    if (cupri.input.length === 0) return 0;
+
+    const view = new DataView(HEAPU8.buffer);
+    var offset = 0;
+
+    for (var i = 0; i < cupri.input.length; i++) {
+      const e = cupri.input[i];
+      const text = e.t || '';
+      const textBytes = text ? lengthBytesUTF8(text) : 0;
+      const record = 32 + ((textBytes + 1 + 3) & ~3);
+
+      // Out of room: stop here and keep everything still unwritten, including this one.
+      if (offset + record > cap) {
+        if (offset === 0) return -1;
+        cupri.input = cupri.input.slice(i);
+        return offset;
+      }
+
+      const at = ptr + offset;
+      view.setInt32(at, e.k | 0, true);
+      view.setInt32(at + 4, e.i0 | 0, true);
+      view.setInt32(at + 8, e.i1 | 0, true);
+      view.setFloat32(at + 12, e.x || 0, true);
+      view.setFloat32(at + 16, e.y || 0, true);
+      view.setFloat32(at + 20, e.a || 0, true);
+      view.setFloat32(at + 24, e.b || 0, true);
+      view.setInt32(at + 28, textBytes, true);
+      if (textBytes) stringToUTF8(text, at + 32, textBytes + 1);
+
+      offset += record;
+    }
+
+    cupri.input = [];
+    return offset;
+  },
+
+  // The cursor the document says belongs under the pointer. Set on the canvas so a link looks like a link — the
+  // page has no DOM for the site, so this is the only thing that can express it.
+  cupri_set_cursor__deps: ['$cupri'],
+  cupri_set_cursor: function (ptr) {
+    const c = cupri.canvasEl();
+    if (!c) return;
+    const css = UTF8ToString(ptr) || 'default';
+    if (css === cupri.cursor) return;     // assigning style on every move is a layout invalidation for nothing
+    cupri.cursor = css;
+    c.style.cursor = css;
   },
 
   // Copies the next inbound message into the supplied buffer. Returns its length, 0 when the inbox is empty, or -1

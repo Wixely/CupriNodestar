@@ -23,6 +23,27 @@ internal static unsafe partial class BrowserNavigation
     [LibraryImport("js", EntryPoint = "cupri_status")]
     private static partial void SetStatus(IntPtr utf8);
 
+    [LibraryImport("js", EntryPoint = "cupri_take_back")]
+    private static partial int TakeBack();
+
+    [LibraryImport("js", EntryPoint = "cupri_set_can_back")]
+    private static partial void SetCanGoBackCore(int can);
+
+    /// <summary>
+    /// Whether the visitor pressed Back. <b>Takes</b> rather than peeks, like a submitted link: one press is one
+    /// step, however often this is polled.
+    /// </summary>
+    public static bool TakeBackRequest() => TakeBack() != 0;
+
+    /// <summary>
+    /// Tells the chrome whether there is anywhere to go back to.
+    ///
+    /// <para>Driven from here because the history lives here. A Back button that is enabled over an empty history
+    /// is a control that lies about what it can do, and the visitor learns to distrust the chrome — which is the one
+    /// part of this page they are supposed to be able to trust.</para>
+    /// </summary>
+    public static void SetCanGoBack(bool can) => SetCanGoBackCore(can ? 1 : 0);
+
     /// <summary>
     /// The link the visitor submitted, or null. <b>Takes</b> rather than peeks — the JS side clears it — so one
     /// submit yields exactly one visit no matter how often this is polled.

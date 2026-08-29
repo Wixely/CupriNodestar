@@ -121,6 +121,103 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
         Assert.Empty(_pageErrors);
     }
 
+    /// <summary>
+    /// The pointer reaching the document, observed through the cursor.
+    ///
+    /// <para>The cursor is the cleanest evidence available. A canvas has no DOM for the site, so the browser cannot
+    /// tell anyone what is under the mouse — the only thing that can is the client, by hit-testing the document and
+    /// saying so. If the pointer never arrives, no position on the canvas produces a pointer cursor, and this fails
+    /// wherever it looks.</para>
+    ///
+    /// <para>Swept rather than aimed. Where the link lands in canvas pixels depends on the layout, the device pixel
+    /// ratio and the hybrid zoom the page was fitted at; computing that here would be reimplementing the renderer's
+    /// arithmetic in the test, and getting it subtly wrong would look exactly like the feature being broken.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_pointer_reaches_the_document()
+    {
+        _diagnosticsName = "pointer-reaches-document";
+        await ExpectLogAsync("painted");
+
+        var box = await ViewportAsync();
+        string cursor = string.Empty;
+
+        for (var row = 0; row < 16 && cursor != "pointer"; row++)
+        {
+            for (var col = 0; col < 16 && cursor != "pointer"; col++)
+            {
+                await _page!.Mouse.MoveAsync(
+                    (float)(box.X + box.Width * (col + 0.5) / 16),
+                    (float)(box.Y + box.Height * (row + 0.5) / 16));
+
+                // A frame for the pump to drain the queue and hit-test.
+                await Task.Delay(35);
+                cursor = await _page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''");
+            }
+        }
+
+        if (cursor != "pointer") Assert.Fail(Diagnosis($"the cursor stayed '{cursor}' across the whole canvas"));
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// The wheel reaching the document, observed in pixels.
+    ///
+    /// <para>Asserting on the canvas rather than on any engine state, for the same reason the feed test does: the
+    /// document could scroll internally and still paint nothing, which is indistinguishable from the wheel never
+    /// arriving as far as a visitor is concerned. The fixture's page carries an explicitly scrollable box of colour
+    /// bands so that scrolling it has to change the picture.</para>
+    ///
+    /// <para>The feed is quiet unless asked, so nothing else is repainting while this runs — a changed canvas here
+    /// means the wheel did it.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_wheel_scrolls_the_document()
+    {
+        _diagnosticsName = "wheel-scrolls-document";
+        await ExpectLogAsync("painted");
+
+        var before = await CanvasAsync();
+        var box = await ViewportAsync();
+
+        // Swept for the same reason as the cursor: the scrollable box's position on the canvas is the renderer's
+        // arithmetic, not the test's. Each column is tried from the top down, wheeling several notches so a short
+        // scroll still moves a whole colour band.
+        for (var row = 0; row < 8; row++)
+        {
+            for (var col = 0; col < 8; col++)
+            {
+                await _page!.Mouse.MoveAsync(
+                    (float)(box.X + box.Width * (col + 0.5) / 8),
+                    (float)(box.Y + box.Height * (row + 0.5) / 8));
+
+                for (var notch = 0; notch < 4; notch++)
+                {
+                    await _page.Mouse.WheelAsync(0, 120);
+                    await Task.Delay(30);
+                }
+
+                var now = await CanvasAsync();
+                if (now.Fingerprint != before.Fingerprint)
+                {
+                    Assert.Empty(_pageErrors);
+                    return;
+                }
+            }
+        }
+
+        Assert.Fail("the wheel never changed the canvas — either the event is not reaching the document, or the "
+                    + "scrollable region did not move. The page's #scroller is the thing that should have scrolled.");
+    }
+
+    /// <summary>The canvas's position on the page, which is where synthetic input has to be aimed.</summary>
+    private async Task<Microsoft.Playwright.LocatorBoundingBoxResult> ViewportAsync()
+    {
+        var box = await _page!.Locator("#viewport").BoundingBoxAsync();
+        Assert.NotNull(box);
+        return box!;
+    }
+
     /// <summary>Waits for a line, then fails with the whole client log — which is the useful thing to read.</summary>
     private async Task ExpectLogAsync(string fragment, Action? beforeEachPoll = null)
     {

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using CupriFace;
+using CupriFace.Interaction;
 using SkiaSharp;
 
 namespace CupriNet.Nodestar.Client;
@@ -215,11 +216,7 @@ internal static unsafe partial class BrowserRenderer
         var density = CanvasScale();
         if (density <= 0) density = 1f;
 
-        var cssWidth = width / density;
-        var cssHeight = height / density;
-        var zoom = Math.Clamp(Math.Min(cssWidth / DesignWidth, cssHeight / DesignHeight), 0.25f, 4f);
-
-        var present = density * zoom;
+        var present = density * Zoom();
         surface.Canvas.Scale(present);
 
         // Render in LOGICAL units. Skia maps them onto the device pixels above, so text is laid out at the size the
@@ -249,5 +246,104 @@ internal static unsafe partial class BrowserRenderer
             _painted = true;
             Console.WriteLine("[cupri] painted");
         }
+    }
+
+    /// <summary>
+    /// The hybrid-zoom factor the document is currently laid out at: fit the tighter axis, let the longer reflow.
+    ///
+    /// <para>Shared with the input path deliberately. The document is laid out in LOGICAL units and drawn at a
+    /// scale, so a pointer position in CSS pixels means nothing to it until it is divided by this. Computing it in
+    /// two places would let painting and hit-testing drift apart — and the symptom of that is the worst kind: a
+    /// page that looks right and answers clicks a few pixels away from where they landed.</para>
+    /// </summary>
+    private static float Zoom()
+    {
+        var density = CanvasScale();
+        if (density <= 0) density = 1f;
+
+        var cssWidth = CanvasWidth() / density;
+        var cssHeight = CanvasHeight() / density;
+        if (cssWidth <= 0 || cssHeight <= 0) return 1f;
+
+        return Math.Clamp(Math.Min(cssWidth / DesignWidth, cssHeight / DesignHeight), 0.25f, 4f);
+    }
+
+    /// <summary>
+    /// Whether the document is ready to be interacted with.
+    ///
+    /// <para>Input before the first paint is dropped rather than queued. The page is still a template at that point,
+    /// so a click would hit-test against placeholder text and land somewhere the visitor never saw — and they cannot
+    /// have aimed at something that was not on screen.</para>
+    /// </summary>
+    private static bool Ready => _document is not null && !_awaitingFirstBind;
+
+    /// <summary>Repaints if the document says the frame changed. Every dispatch below funnels through here.</summary>
+    private static void Settle(bool changed)
+    {
+        if (changed) Paint();
+    }
+
+    public static void PointerMove(float cssX, float cssY)
+    {
+        if (!Ready) return;
+
+        var zoom = Zoom();
+        float x = cssX / zoom, y = cssY / zoom;
+
+        Settle(_document!.DispatchPointerMove(x, y));
+
+        // The cursor is the only affordance a canvas-painted site has. Without it a link is indistinguishable from
+        // a paragraph until you click it, which is the difference between a page that feels interactive and one
+        // that feels like a screenshot.
+        try
+        {
+            BrowserInput.SetCursor(CupriDocument.CursorCss(_document.CursorAt(x, y)));
+        }
+        catch (Exception ex)
+        {
+            // Never fatal: a cursor is a nicety, and a hit test that throws must not stop the pointer working.
+            Console.WriteLine($"[cupri] cursor: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    public static void PointerDown(float cssX, float cssY)
+    {
+        if (!Ready) return;
+        var zoom = Zoom();
+        Settle(_document!.DispatchPointer(0, PointerPhase.Down, cssX / zoom, cssY / zoom));
+    }
+
+    public static void PointerUp(float cssX, float cssY)
+    {
+        if (!Ready) return;
+        var zoom = Zoom();
+        Settle(_document!.DispatchPointerUp(cssX / zoom, cssY / zoom));
+    }
+
+    public static void Click(float cssX, float cssY, int clickCount)
+    {
+        if (!Ready) return;
+        var zoom = Zoom();
+        Settle(_document!.DispatchClick(cssX / zoom, cssY / zoom, clickCount));
+    }
+
+    /// <summary>
+    /// Scrolling, which is what the wheel is for on a page taller than the canvas.
+    ///
+    /// <para>The deltas are NOT divided by the zoom. They are a distance the visitor asked the content to move, not
+    /// a position in it — dividing would make a page scroll further the more it had been shrunk to fit, which is
+    /// exactly backwards from how it feels to use.</para>
+    /// </summary>
+    public static void Wheel(float cssX, float cssY, float deltaY, float deltaX)
+    {
+        if (!Ready) return;
+        var zoom = Zoom();
+        Settle(_document!.DispatchWheel(cssX / zoom, cssY / zoom, deltaY, deltaX));
+    }
+
+    public static void Key(string text, int editKey, int mods)
+    {
+        if (!Ready) return;
+        Settle(_document!.DispatchKey(text, (EditKey)editKey, (KeyMods)mods));
     }
 }

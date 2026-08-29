@@ -95,9 +95,10 @@ internal sealed class SiteGateway(SiteBuilder site)
         var html = Encoding.UTF8.GetString(response.Body);
         if (!SiteTemplate.NeedsBinding(html)) return response.Body;
 
-        // Which feed: the site's first, matching the convention the browser client already follows. A site cannot
-        // yet declare its feed name (see TODO.md), so both ends assume — and they assume the same thing.
-        var name = site.Feeds.Keys.FirstOrDefault();
+        // Which feed: the one the page names, falling back to the site's first for pages written before a page
+        // could say. The browser client reads the same declaration before it attends, so Mode 1 and Mode 2 bind
+        // against the same feed instead of each picking one and happening to agree.
+        var name = SiteTemplate.DeclaredFeed(html) ?? site.Feeds.Keys.FirstOrDefault();
         if (name is null) return Encoding.UTF8.GetBytes(SiteTemplate.Bind(html, null));
 
         JsonNode? model = null;

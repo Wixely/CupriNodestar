@@ -30,6 +30,78 @@ internal static partial class SiteTemplate
     [GeneratedRegex(@"\{\{\s*([A-Za-z0-9_.]+)\s*\}\}", RegexOptions.Compiled)]
     private static partial Regex Placeholder();
 
+    /// <summary>
+    /// The feed a page declares through <c>&lt;meta name="cupri-feed" content="…"&gt;</c>, or null when it says
+    /// nothing.
+    ///
+    /// <para>The browser client reads the identical tag before it attends, so both modes agree on which feed a page
+    /// is about rather than each guessing. That agreement is the point: the gateway used to take the site's FIRST
+    /// feed and the client always attended <c>"overlay"</c>, which matched only because every site so far called it
+    /// that.</para>
+    ///
+    /// <para>The client carries its own copy of this scan rather than sharing one — it is a wasm build with CupriFace
+    /// in it and this assembly must stay free of a UI runtime, so there is no assembly the two could share. Scanned
+    /// by hand rather than by regular expression so the two copies are the same algorithm read twice, which is a far
+    /// easier thing to keep honest than two dialects of the same pattern.</para>
+    /// </summary>
+    public static string? DeclaredFeed(string html)
+    {
+        var index = 0;
+
+        while (true)
+        {
+            index = html.IndexOf("<meta", index, StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return null;
+
+            var close = html.IndexOf('>', index);
+            if (close < 0) return null;      // an unclosed tag: nothing dependable left to read
+
+            var tag = html[index..close];
+            index = close + 1;
+
+            if (!string.Equals(Attribute(tag, "name"), "cupri-feed", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var feed = Attribute(tag, "content").Trim();
+            if (feed.Length > 0) return feed;
+        }
+    }
+
+    /// <summary>One quoted attribute out of a tag, or empty. Single and double quotes; anything else is not a match.</summary>
+    private static string Attribute(string tag, string attribute)
+    {
+        var at = tag.IndexOf(attribute, StringComparison.OrdinalIgnoreCase);
+
+        while (at >= 0)
+        {
+            // Whitespace before, or "name" would match inside another attribute's value — which is how a page with
+            // <meta name="description" content="…rooms…"> would otherwise be read as declaring a feed.
+            var boundary = at > 0 && char.IsWhiteSpace(tag[at - 1]);
+            var cursor = at + attribute.Length;
+
+            if (boundary)
+            {
+                while (cursor < tag.Length && char.IsWhiteSpace(tag[cursor])) cursor++;
+
+                if (cursor < tag.Length && tag[cursor] == '=')
+                {
+                    cursor++;
+                    while (cursor < tag.Length && char.IsWhiteSpace(tag[cursor])) cursor++;
+
+                    if (cursor < tag.Length && (tag[cursor] == '"' || tag[cursor] == '\''))
+                    {
+                        var quote = tag[cursor++];
+                        var end = tag.IndexOf(quote, cursor);
+                        if (end >= 0) return tag[cursor..end];
+                    }
+                }
+            }
+
+            at = tag.IndexOf(attribute, at + 1, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Empty;
+    }
+
     /// <summary>Whether a document has anything to bind, so the gateway can skip the cost of running a feed.</summary>
     public static bool NeedsBinding(string html) =>
         html.Contains("{{", StringComparison.Ordinal) || html.Contains("data-repeat", StringComparison.Ordinal);

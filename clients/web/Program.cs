@@ -39,12 +39,22 @@ static async Task BrowseAsync()
     // for a new link — so when one of those goes away, the address bar is genuinely the only way back.
     var origin = true;
 
+    // Where the visitor has been. Links only ever ARRIVED before — there was no way to return to a node except by
+    // finding its link again, which for a pasted one meant having kept it.
+    //
+    // The origin flag travels with each entry rather than being recomputed. Going back to the serving node has to
+    // restore the ability to auto-reconnect to it, and going back to a pasted link must not claim an HTTP
+    // relationship this page does not have with it — so the two have to be remembered together.
+    var history = new Stack<(string Link, bool Origin)>();
+
     while (link is not null)
     {
-        string? next = null;
+        BrowserNavigation.SetCanGoBack(history.Count > 0);
+
+        var departure = Departure.Ended;
         try
         {
-            next = await VisitAsync(link, suite);
+            departure = await VisitAsync(link, suite);
         }
         catch (Exception ex)
         {
@@ -54,9 +64,18 @@ static async Task BrowseAsync()
             BrowserNavigation.Status($"visit failed — {ex.Message}");
         }
 
-        if (next is not null)
+        if (departure.Back && history.TryPop(out var previous))
         {
-            // The visitor navigated. From here the address bar owns where we are, not the seed.
+            (link, origin) = previous;
+            Console.WriteLine("[cupri] back");
+            continue;
+        }
+
+        if (departure.Link is { } next)
+        {
+            // The visitor navigated. Where they were becomes where Back returns to, and from here the address bar
+            // owns where we are rather than the seed.
+            history.Push((link, origin));
             link = next;
             origin = false;
             continue;
@@ -66,13 +85,32 @@ static async Task BrowseAsync()
         {
             // The visit ended without the visitor asking it to: the channel dropped, or the node restarted under us.
             // Left alone this is the state the client used to sit in forever — connected-looking, actually dead.
+            //
+            // NOT pushed onto the history: this is the same node coming back, not somewhere new. Pushing it would
+            // fill the history with one entry per reconnect, and Back would walk through a node's outages instead of
+            // through the places the visitor actually went.
             (link, origin) = await ReconnectToOriginAsync();
             continue;
         }
 
-        BrowserNavigation.Status("idle — paste an intonation link to visit another node");
-        link = await WaitForLinkAsync();
-        origin = false;
+        BrowserNavigation.Status(history.Count > 0
+            ? "idle — paste a link to visit another node, or go back"
+            : "idle — paste an intonation link to visit another node");
+
+        var idle = await WaitForDepartureAsync();
+
+        if (idle.Back && history.TryPop(out var earlier))
+        {
+            (link, origin) = earlier;
+            continue;
+        }
+
+        if (idle.Link is { } pasted)
+        {
+            history.Push((link, origin));
+            link = pasted;
+            origin = false;
+        }
     }
 }
 
@@ -140,7 +178,7 @@ static async Task<string?> WaitASecondAsync()
 /// One visit: dial, pilgrimage, fetch, render, then stream until the visitor navigates away. Returns the link they
 /// navigated to, or null if the visit simply ended.
 /// </summary>
-static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
+static async Task<Departure> VisitAsync(string link, BouncyCastleSuite suite)
 {
     if (!IntonationUri.TryParse(link, out var intonation, out var reason))
         throw new InvalidOperationException($"that link is unusable: {reason}");
@@ -172,14 +210,21 @@ static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
     Console.WriteLine($"[cupri] site answered {page.Status} ({page.Body.Length} bytes, {page.ContentType})");
     // Loaded, not yet shown: the page is a template until the first feed message binds it, so the renderer holds
     // the first paint back rather than flashing "{{ node.site }}" at the visitor.
-    BrowserRenderer.Show(page.AsText());
+    var html = page.AsText();
+    BrowserRenderer.Show(html);
     Console.WriteLine("[cupri] document loaded — holding the first paint until the feed binds it");
+
+    // Which feed this page is about, according to the page. Read before attending, because attending is the next
+    // thing that happens — and a client that renders whatever site it is pointed at has no business knowing any
+    // particular site's feed names.
+    var feed = SiteManifest.FeedName(html);
+    if (feed != SiteManifest.DefaultFeed) Console.WriteLine($"[cupri] the site declares its feed as '{feed}'");
 
     // The visit ends when the visitor navigates. Watching runs alongside the feed rather than between messages: an
     // idle feed can be silent indefinitely, and an address bar that only responds when data happens to arrive would
     // feel broken exactly when the node is quiet.
     using var navigating = new CancellationTokenSource();
-    var navigated = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var navigated = new TaskCompletionSource<Departure>(TaskCreationOptions.RunContinuationsAsynchronously);
     _ = WatchForNavigationAsync(navigating, navigated);
 
     // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage. Each
@@ -187,7 +232,7 @@ static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
     // is the client's job, not the page's.
     try
     {
-        await foreach (var frame in shrine.AttendAsync("overlay", navigating.Token))
+        await foreach (var frame in shrine.AttendAsync(feed, navigating.Token))
         {
             Console.WriteLine($"[cupri] feed {frame.Kind} ({frame.Payload.Length} bytes)");
             if (frame.Kind is AuspiceFrameKind.Snapshot or AuspiceFrameKind.Update)
@@ -201,30 +246,52 @@ static async Task<string?> VisitAsync(string link, BouncyCastleSuite suite)
         Console.WriteLine("[cupri] leaving for another node");
     }
 
-    return navigated.Task.IsCompletedSuccessfully ? navigated.Task.Result : null;
+    return navigated.Task.IsCompletedSuccessfully ? navigated.Task.Result : Departure.Ended;
 }
 
-/// <summary>Cancels the current visit the moment a link is submitted, and hands it back.</summary>
-static async Task WatchForNavigationAsync(CancellationTokenSource navigating, TaskCompletionSource<string> navigated)
+/// <summary>Ends the current visit the moment the visitor asks to go somewhere, and says where.</summary>
+static async Task WatchForNavigationAsync(CancellationTokenSource navigating, TaskCompletionSource<Departure> navigated)
 {
     while (!navigating.IsCancellationRequested)
     {
         await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
-        if (BrowserNavigation.TakePendingLink() is { } next)
-        {
-            navigated.TrySetResult(next);
-            await navigating.CancelAsync().ConfigureAwait(false);
-            return;
-        }
+
+        var departure =
+            BrowserNavigation.TakePendingLink() is { } next ? Departure.To(next)
+            : BrowserNavigation.TakeBackRequest() ? Departure.Backwards
+            : (Departure?)null;
+
+        if (departure is null) continue;
+
+        navigated.TrySetResult(departure.Value);
+        await navigating.CancelAsync().ConfigureAwait(false);
+        return;
     }
 }
 
-/// <summary>Waits for the address bar.</summary>
-static async Task<string> WaitForLinkAsync()
+/// <summary>Waits for the address bar, or for Back — the two ways out of an idle client.</summary>
+static async Task<Departure> WaitForDepartureAsync()
 {
     while (true)
     {
         await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
-        if (BrowserNavigation.TakePendingLink() is { } link) return link;
+        if (BrowserNavigation.TakePendingLink() is { } link) return Departure.To(link);
+        if (BrowserNavigation.TakeBackRequest()) return Departure.Backwards;
     }
+}
+
+/// <summary>
+/// How a visit ended: the visitor went somewhere, went back, or it simply stopped.
+///
+/// <para>Three outcomes rather than a nullable link, because "went back" and "stopped on its own" need entirely
+/// different answers — one pops the history, the other tries to reconnect — and a null cannot tell them apart.</para>
+/// </summary>
+internal readonly record struct Departure(string? Link, bool Back)
+{
+    /// <summary>The visit ended without the visitor asking: the channel dropped, or the node went away.</summary>
+    public static Departure Ended => new(null, false);
+
+    public static Departure To(string link) => new(link, false);
+
+    public static Departure Backwards => new(null, true);
 }

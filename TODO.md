@@ -127,10 +127,15 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Client
 
-- [ ] **A site cannot declare its feed name.** The client attends `"overlay"` and nothing else, so every
-      Document-tier site must call its feed that. A client that renders whatever site it is pointed at should not
-      know any site's feed names — the name wants to come from the site, via a header on the Oracle response or an
-      attribute in its markup.
+- [x] **A site declares its own feed name.** `<meta name="cupri-feed" content="…">`, read by the client before it
+      attends and by the gateway before it binds, so Mode 1 and Mode 2 agree instead of both assuming `"overlay"`.
+      Markup rather than a response header because `ServeStaticFiles` is the common case and cannot set one.
+
+      The browser gate's own feed is now called `gate`, which is what makes the declaration load-bearing: a client
+      that ignored it would attend `"overlay"`, receive nothing, and fail every feed assertion. The scan is
+      duplicated between client and server — a wasm build carrying CupriFace cannot share an assembly with one that
+      must stay free of a UI runtime — so it is deliberately the same algorithm written twice, pinned by
+      `DeclaredFeedTests`.
 - [x] **Resize handling.** The canvas's pixel buffer now tracks its CSS box (via `ResizeObserver`, plus a window
       listener for the monitor-scale case where `devicePixelRatio` changes while the element does not), and the frame
       pump repaints when it notices a new size. Previously the buffer was sized once at boot and the browser scaled
@@ -142,16 +147,33 @@ system, while this one is honest about what a clone actually gets today.
       the layout width never falls below the 1024px design width — the page scales down instead of reflowing
       narrower. The underlying inability to break a long token is untouched, and would resurface the moment a site
       opted out of scaling.
-- [~] **The page can be taller than the canvas, and there is no scrolling.** Hybrid zoom largely answers this by
-      scaling a tall page down to fit rather than clipping it. It is not scrolling, though: a page far taller than
-      the viewport scales down until it is unreadable, and there is still no way to move around one. Real scrolling
-      needs input dispatch — see below.
-- [ ] **No input reaches the document.** The client calls no `DispatchPointer`, `DispatchWheel` or `DispatchClick`,
-      so an L2 site cannot be clicked, scrolled, pinched or typed into — it is a live picture. Everything
-      interactive CupriFace supports is unreachable until the client forwards events, which is the single largest
-      capability gap in the client.
-- [ ] **No history.** No back, and links are the only way in — there is no roaming to an address you do not already
-      hold a link for.
+- [~] **Scrolling works within a page; a whole page still scales rather than scrolls.** The wheel now reaches the
+      document, so a scrollable region moves and repaints — verified in Chromium. What hybrid zoom still does is
+      scale a tall PAGE down to fit rather than letting it scroll, so a page far taller than the viewport shrinks
+      until it is unreadable. That is a policy question about how a site with no declared design size should be
+      fitted, not a missing capability.
+- [x] **Input reaches the document.** Pointer, wheel and keyboard are carried into CupriFace, so an L2 site can be
+      clicked, scrolled and typed into rather than being a live picture. The cursor is driven from the document's own
+      hit test, which is the only affordance a canvas-painted site has — without it a link is indistinguishable from
+      a paragraph until you click it.
+
+      Events queue in JavaScript and are drained once per frame, for the same reason inbound frames are: calling into
+      wasm from a DOM handler re-enters the runtime at an arbitrary point. Pointer moves coalesce; discrete events
+      never do. The hit-test mapping shares `Zoom()` with the painter rather than recomputing it — the symptom of
+      those drifting apart is a page that looks right and answers clicks a few pixels away from where they landed.
+
+      Proven in real Chromium by two gate tests: hovering resolves a pointer cursor, and the wheel scrolls a region
+      and changes the picture. Both SWEEP the canvas rather than aiming at coordinates, because where an element
+      lands depends on the zoom the page was fitted at — computing that in the test would be reimplementing the
+      renderer's arithmetic, and getting it subtly wrong looks exactly like the feature being broken.
+- [x] **Back.** The client keeps where the visitor has been and the chrome has a Back control, disabled until there
+      is somewhere to go so it never lies about being able to. Each entry remembers whether it was the serving node,
+      because going back has to restore the ability to auto-reconnect to that node and must not claim an HTTP
+      relationship with a pasted link that this page does not have.
+
+      A reconnect to the same node is deliberately NOT pushed: Back should walk the places the visitor went, not a
+      node's outages. Still absent is roaming — links remain the only way in, so there is nowhere to go that you do
+      not already hold a link for.
 - [x] **Reconnects after the serving node restarts.** Detected in ~7s (a `disconnected` connection state plus a
       grace timer, rather than waiting ~30s for ICE consent freshness to expire), then a backoff that re-fetches the
       link over HTTP before dialling. The re-fetch is mandatory, not an optimisation: a restarted node regenerates

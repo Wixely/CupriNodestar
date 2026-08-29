@@ -17,11 +17,12 @@ namespace CupriNet.Nodestar.BrowserTests;
 /// configuration — a site that advertises its Signet, a feed that emits on command — and shelling out would mean
 /// reproducing all of that through command-line flags and then guessing when it was ready.</para>
 ///
-/// <para><b>The feed must be called "overlay".</b> The client attends that one name and no other, which this fixture
-/// discovered by naming its feed something else and receiving nothing. That is a real limitation rather than a test
-/// detail: a client that renders whatever site it is pointed at should not know any site's feed names. Until a site
-/// can declare them — a header on the Oracle response, or an attribute in its markup — every Document-tier site has
-/// to call its feed "overlay".</para>
+/// <para><b>The site names its own feed.</b> This fixture once had to call its feed "overlay", because that was the
+/// one name the client attended — discovered here by naming it something else and receiving nothing. A client that
+/// renders whatever site it is pointed at should not know any site's feed names, so a page now declares its own
+/// through <c>&lt;meta name="cupri-feed"&gt;</c>. The feed below is called "gate" precisely so that the declaration
+/// is load-bearing: a client that ignored it would attend "overlay", receive nothing, and fail every feed
+/// assertion.</para>
 /// </summary>
 public sealed class NodestarUnderTest : IAsyncLifetime
 {
@@ -81,23 +82,52 @@ public sealed class NodestarUnderTest : IAsyncLifetime
         // is deliberately a value the test can recognise in rendered pixels' worth of DOM.
         builder.Site.Serve(_ => CupriNet.Rites.OracleResponse.Ok(
             Encoding.UTF8.GetBytes("""
-                <html><head><style>
+                <html><head>
+                <!-- The feed is NOT called "overlay", deliberately. The client used to attend that name and nothing
+                     else, so a fixture that used it could not tell a client reading this declaration from one
+                     ignoring it. Every feed assertion below now depends on the declaration being honoured. -->
+                <meta name="cupri-feed" content="gate">
+                <style>
                   /* NO body background, deliberately. A page that asks for nothing is the case the host's canvas
                      clear exists for — and a document that paints its own background hides that bug completely,
                      which an earlier version of this fixture did. */
                   body { margin:0; color:#101014; font: 16px sans-serif; padding: 20px; }
                   h1 { color:#2244cc; font-size: 28px; }
                   .value { font-size: 22px; font-weight: 700; }
+                  /* cursor declared rather than inferred from the anchor: the gate is testing that a pointer
+                     POSITION reaches the document and resolves a style there, not what the engine decides an <a>
+                     ought to feel like. A real site would declare it too. */
+                  a { color:#2244cc; cursor:pointer; }
+                  /* Deliberately TALL. The gate sweeps the canvas rather than aiming, because where a thing lands
+                     depends on the hybrid zoom the page was fitted at — and at the zoom a 60vh canvas produces, the
+                     grid steps about 48 logical pixels at a time. A one-line link is ~19px tall and the sweep walks
+                     straight over it, which looks exactly like input not arriving. */
+                  .hand { cursor:pointer; background:#dde4ee; padding:70px 20px; margin-top:12px; }
+                  /* Something to scroll. Hybrid zoom scales a tall PAGE down to fit rather than clipping it, so a
+                     long body would never scroll — an explicitly scrollable box is what the wheel can actually move,
+                     and the colour bands make the movement visible in pixels rather than only in the engine. */
+                  #scroller { height:120px; overflow:auto; border:1px solid #99a; }
+                  #scroller div { height:90px; }
                 </style></head>
                 <body>
                   <h1>browser gate</h1>
                   <p class="value">{{ value }}</p>
+                  <p><a href="cuprinet://intone/nowhere">a link to nowhere</a></p>
+                  <div class="hand">a region that asks for a pointer cursor</div>
+                  <div id="scroller">
+                    <div style="background:#e33">one</div>
+                    <div style="background:#3e3">two</div>
+                    <div style="background:#33e">three</div>
+                    <div style="background:#ee3">four</div>
+                    <div style="background:#e3e">five</div>
+                  </div>
                 </body></html>
                 """),
             "text/html; charset=utf-8"));
 
-        // Named "overlay" because the client attends that name and nothing else — see the note in the class summary.
-        builder.Site.Feed("overlay", async (publisher, ct) =>
+        // Named to match the page's own declaration rather than the old hard-coded default, which is what makes the
+        // feed tests evidence that the declaration is read.
+        builder.Site.Feed("gate", async (publisher, ct) =>
         {
             await publisher.SnapshotAsync(Payload(), ct).ConfigureAwait(false);
             while (!ct.IsCancellationRequested)

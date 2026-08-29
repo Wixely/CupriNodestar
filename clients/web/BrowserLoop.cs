@@ -45,6 +45,20 @@ internal static class BrowserLoop
             }
         }
 
+        // Input BEFORE the clock, so a click is reflected in the frame it happened on rather than the next one. At
+        // 60Hz that is 16ms, which is the difference between a button that feels connected to the mouse and one
+        // that feels a beat behind.
+        try
+        {
+            BrowserInput.Pump();
+        }
+        catch (Exception ex)
+        {
+            // Input must never take the pump down: a bad event would otherwise end every future frame, freezing the
+            // page in a way that looks exactly like a hung connection.
+            Console.WriteLine($"[cupri] input faulted: {ex.GetType().Name}: {ex.Message}");
+        }
+
         // The frame's other job: give the renderer a clock. CupriFace advances animations only when told the time,
         // so without this every @keyframes and every transition renders one frame and freezes.
         //
