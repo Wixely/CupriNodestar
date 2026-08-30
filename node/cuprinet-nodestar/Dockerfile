@@ -97,8 +97,13 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 #                                 image history, which is the whole reason it is a secret and not an ARG
 #   the portable-IL publish       one /app, no RID, no apphost
 #   the `app` user and chown      the container runs as uid 1654(app), not root
-#   Mode 2 end to end             a site bind-mounted at /site is served at / with X-Nodestar-Mode: gateway, and a
-#                                 {{ }} placeholder with no feed behind it binds to empty rather than showing braces
+#   Mode 2 end to end             a site bind-mounted at /site is served at / with X-Nodestar-Mode: gateway and
+#                                 Cache-Control: no-store, and a {{ }} placeholder with no feed behind it binds to
+#                                 empty rather than showing braces
+#   Mode 2 IN A REAL BROWSER      headless Chromium on the host rendered it as ordinary DOM: zero canvas elements,
+#                                 no client, no WebRTC, nothing on the console. This is the row that has to work
+#                                 where inbound UDP cannot reach — a tunnel, an onion, or the double NAT below —
+#                                 and it is the one path here proven from a container all the way to a browser
 #   /healthz and /_nodestar       both answer; link.json returns the node's link as JSON
 #   size                          350 MB
 #

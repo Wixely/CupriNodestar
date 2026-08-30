@@ -35,6 +35,12 @@ system, while this one is honest about what a clone actually gets today.
       repeats *"that node advertises no site in its link"* — the link has no Signet to pin. And UDP has to be
       published (`-p 47654:47654/udp`) as well as TCP. Both are now in the Dockerfile.
 
+      **Mode 2 from the container is proven all the way to a browser.** Headless Chromium on the host rendered a
+      bind-mounted site as ordinary DOM — zero canvas elements, no client, no WebRTC, a silent console, the gateway
+      header and `no-store` present, and the `{{ }}` placeholder bound rather than showing. That is worth stating
+      beside the Mode 1 result, because it is the same container and the same host: the path that needs no inbound
+      UDP works end to end, and the one that needs it is what stalls.
+
       **Inbound UDP is characterised rather than settled.** With both fixed, the browser reached ICE `checking` and
       then `connection failed` — further than a missing route would get, so signalling and answer-from-the-link both
       work and the connectivity check is what failed. The path here was Windows → WSL2 → the docker bridge, and ICE
