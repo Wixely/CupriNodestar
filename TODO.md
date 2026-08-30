@@ -49,13 +49,27 @@ system, while this one is honest about what a clone actually gets today.
 
       **The finding that matters more for a real deployment:** the containerised node advertised `127.0.0.1` as its
       only beacon, because nothing it could see was routable. A browser anywhere else would dial its own loopback —
-      and Nodestar exposes no option to tell a node its reachable address. See below.
+      and until `PublicHost` was wired up, nothing could tell the node otherwise. See below.
 
-- [ ] **A node cannot be told its own reachable address.** `CupriNodeOptions` has `AdvertisedBeacons` and
-      `AdvertiseLocalAddresses`; `NodestarOptions` surfaces neither. A node normally learns its address by port
-      mapping or reflexive observation, which is fine on a public host and useless behind a container bridge, a
-      tunnel, or a NAT that does not speak UPnP — exactly the deployments Mode 2 exists for. Found while proving
-      Mode 1 from a container, where the node advertised only `127.0.0.1`.
+- [x] **A node can be told its own reachable address.** `PublicHost` / `PublicPort` / `AdvertisedAddresses` /
+      `AdvertiseLocalAddresses` now reach `CupriNodeOptions.AdvertisedBeacons`, and a link decodes to what an
+      operator declared. Found while proving Mode 1 from a container, where the node advertised only `127.0.0.1`.
+
+      **It was worse than "no option exists".** `PublicHost` and `AdvertisedAddresses` were already there, already
+      documented, and referenced by nothing — configuration an operator could set correctly and have silently
+      ignored, which is harder to diagnose than an option that is absent. The absence was the reported symptom; the
+      dead wiring was the actual defect.
+
+      Three things the tests found that guessing would not have:
+      - A node with nothing routable to report advertises **no clearnet beacon at all**, and the browser client then
+        throws with no fallback to the origin the page came from. The container's `127.0.0.1` is the loud failure
+        mode; this is the quiet one, and the same option fixes both.
+      - CupriNet drops reserved IPv6 before it reaches a link, `2001:db8::/32` among it. The first version of the
+        IPv6 test used a documentation address, failed, and would have been read as "IPv6 beacons do not work".
+      - Beacon **order** is meaning: the client dials the first non-onion beacon and never reaches the second.
+
+      Startup now prints what a browser will dial, and warns when the answer is nothing — the failure otherwise
+      appears only in a visitor's browser console, on their machine, while the node logs a healthy start.
 
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
 - [ ] **A Mode-1 image.** Needs the wasm bundle, which is a build output a fresh clone does not have. The intended

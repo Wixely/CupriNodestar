@@ -31,10 +31,57 @@ public sealed class NodestarOptions
     /// <summary>The TCP port the overlay listens on.</summary>
     public int ListenPort { get; set; } = 47654;
 
-    /// <summary>A public hostname or IP to advertise, when it differs from what the socket sees (NAT, container).</summary>
+    /// <summary>
+    /// The host or IP this node tells visitors to reach it at, when it cannot work that out for itself.
+    ///
+    /// <para><b>This is the address a browser actually dials.</b> A link carries the WebRTC credentials but no
+    /// address of its own — the client takes the first non-onion beacon in the link and dials that with the WebRTC
+    /// port. So whatever ends up here is what a Mode 1 visitor connects to, and the same beacon is what another
+    /// node dials over TCP.</para>
+    ///
+    /// <para>Leave it unset on a machine with a routable address of its own: the node discovers what it has, and
+    /// port mapping or reflexive observation fill in the rest. Set it whenever the address the node can see is not
+    /// the address a visitor must use — behind a container bridge, a NAT that does not speak UPnP, a cloud load
+    /// balancer. A containerised node with nothing set here was observed advertising <c>127.0.0.1</c>, and every
+    /// visitor faithfully dials their own loopback.</para>
+    ///
+    /// <para>The other outcome is worse and quieter: a node whose interfaces report nothing routable advertises no
+    /// clearnet beacon at all, and the browser client fails with "This node's link carries no clearnet beacon to
+    /// dial" — it does not fall back to the origin the page was served from. A node meant to be reached by a browser
+    /// that is not on its own machine should set this rather than hope.</para>
+    ///
+    /// <para>It does <b>not</b> affect the HTTP gateway. That is served over whatever address the visitor already
+    /// reached, so a node behind a tunnel needs nothing here.</para>
+    /// </summary>
     public string? PublicHost { get; set; }
 
-    /// <summary>Extra <c>host:port</c> beacons to advertise in the link.</summary>
+    /// <summary>
+    /// The port to advertise alongside <see cref="PublicHost"/>. Defaults to <see cref="ListenPort"/>.
+    ///
+    /// <para>It must be the port a visitor can actually reach, which is not necessarily the one this node bound.
+    /// A port-forward that remaps the number has to be declared here, because the browser dials the advertised
+    /// number verbatim.</para>
+    /// </summary>
+    public int? PublicPort { get; set; }
+
+    /// <summary>
+    /// Whether to advertise the addresses this node found on its own interfaces. Default true.
+    ///
+    /// <para>Turn it off when those addresses are useless to a visitor and would only get in the way — a container's
+    /// bridge address, or a LAN address on a node serving the internet. A client dials the FIRST non-onion beacon it
+    /// finds, so an unhelpful one listed ahead of <see cref="PublicHost"/> is not merely noise: it is what gets
+    /// dialled.</para>
+    /// </summary>
+    public bool AdvertiseLocalAddresses { get; set; } = true;
+
+    /// <summary>
+    /// Extra beacons to advertise, each <c>host:port</c> — a second route to this node, or an IPv6 address beside
+    /// an IPv4 one. Listed after <see cref="PublicHost"/>, in the order given.
+    ///
+    /// <para>IPv6 goes in brackets: <c>[2001:db8::1]:47654</c>. A malformed entry stops the node at startup rather
+    /// than being skipped, because an address silently dropped is one a visitor cannot reach and nobody is told
+    /// about.</para>
+    /// </summary>
     public IList<string> AdvertisedAddresses { get; } = [];
 
     // ---- Browser on-ramp ------------------------------------------------------------------------------------

@@ -120,6 +120,12 @@ public sealed class NodestarApplication : IAsyncDisposable
             Concordium = _options.Concordium,
             ListenAddress = ParseAddress(_options.ListenAddress),
             ListenPort = _options.ListenPort,
+
+            // What this node tells visitors to reach it at. A link carries no address of its own — the client dials
+            // the first non-onion beacon — so this is literally the dial target, and a node that cannot see its own
+            // routable address has no other way to name one.
+            AdvertisedBeacons = Beacons(),
+            AdvertiseLocalAddresses = _options.AdvertiseLocalAddresses,
             Suite = suite,
             SecretStore = store,
             Moniker = _options.Moniker,
@@ -180,6 +186,8 @@ public sealed class NodestarApplication : IAsyncDisposable
             _log.LogInformation("Relics: served (bulk content, chunked and verified against a manifest).");
         if (_options.AdvertiseSiteInLink)
             _log.LogInformation("The site's Signet is stamped into this node's link — it is therefore linkable to the node's overlay identity.");
+
+        ReportWhatVisitorsWillDial();
 
         // Post-start work that needed a live transport. A failure here is fatal on purpose: the only caller today is
         // the Tor package publishing the face onion, and a node that came up without the .onion an operator asked for
@@ -347,6 +355,84 @@ public sealed class NodestarApplication : IAsyncDisposable
                 _log.LogWarning("Seed link failed: {Reason}", ex.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// Says at startup what a browser visitor will actually dial.
+    ///
+    /// <para>This exists because the failure it names is otherwise invisible from the node. A link with no clearnet
+    /// beacon makes <c>BrowserDataChannel</c> throw in the visitor's browser, on their machine, with nothing logged
+    /// here — the node reports a healthy startup and every Mode 1 visit fails. A beacon that is present but
+    /// unroutable is quieter still: the dial simply never completes.</para>
+    ///
+    /// <para>So the address is printed whether or not it looks right, because the node cannot tell — only an
+    /// operator knows whether <c>172.17.0.2</c> is the address their visitors can reach.</para>
+    /// </summary>
+    private void ReportWhatVisitorsWillDial()
+    {
+        if (!_options.EnableWebRtc) return;
+
+        var link = _node!.Intone(TimeSpan.FromMinutes(1), DateTimeOffset.UtcNow, []);
+        var dialled = link.Beacons.FirstOrDefault(b => b.Kind != EndpointKind.Onion && !string.IsNullOrWhiteSpace(b.Host));
+
+        if (dialled is null)
+        {
+            _log.LogWarning(
+                "This node's link carries no clearnet address, so a browser has nothing to dial and every Mode 1 "
+                + "visit will fail. Set PublicHost (CUPRINET_NODESTAR_PublicHost) to the address visitors reach.");
+            return;
+        }
+
+        _log.LogInformation(
+            "Browsers will dial {Host}:{Port} ({Kind}). If that is not the address your visitors can reach, set "
+            + "PublicHost.", dialled.Host, dialled.Port, dialled.Kind);
+    }
+
+    /// <summary>
+    /// The manually declared beacon, or none.
+    ///
+    /// <para><c>Manual</c> rather than <c>Host</c>: the kind records where the address CAME FROM, and one an
+    /// operator typed is a different claim from one an interface reported — it is the only kind that can be right
+    /// when the node's own view of itself is wrong.</para>
+    /// </summary>
+    private IReadOnlyList<Beacon> Beacons()
+    {
+        var beacons = new List<Beacon>();
+
+        if (!string.IsNullOrWhiteSpace(_options.PublicHost))
+            beacons.Add(new Beacon(EndpointKind.Manual, _options.PublicHost.Trim(), _options.PublicPort ?? _options.ListenPort));
+
+        foreach (var entry in _options.AdvertisedAddresses)
+            beacons.Add(ParseBeacon(entry));
+
+        return beacons;
+    }
+
+    /// <summary>
+    /// One <c>host:port</c> beacon, or a refusal naming what was wrong with it.
+    ///
+    /// <para>Malformed entries throw rather than being skipped. A beacon exists to tell a visitor where to dial, so
+    /// one that is quietly dropped produces a node that looks configured and is unreachable — and the operator who
+    /// wrote it has no way to find out. Failing at startup costs a restart; failing silently costs a deployment.</para>
+    /// </summary>
+    private static Beacon ParseBeacon(string entry)
+    {
+        var text = (entry ?? string.Empty).Trim();
+
+        // IPv6 is bracketed, so the LAST colon outside the brackets is the port separator. Splitting on the first
+        // colon would tear an address like [2001:db8::1]:47654 in half.
+        var separator = text.LastIndexOf(':');
+        var host = separator > 0 ? text[..separator].Trim() : string.Empty;
+
+        if (separator <= 0 || host.Length == 0 || !int.TryParse(text[(separator + 1)..], out var port))
+            throw new ArgumentException(
+                $"AdvertisedAddresses entry '{entry}' is not 'host:port'. IPv6 is bracketed, as in "
+                + "'[2001:db8::1]:47654'.");
+
+        if (port is < 1 or > 65535)
+            throw new ArgumentException($"AdvertisedAddresses entry '{entry}' names port {port}, which is not a port.");
+
+        return new Beacon(EndpointKind.Manual, host.Trim('[', ']'), port);
     }
 
     private static IPAddress ParseAddress(string value)

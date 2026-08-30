@@ -128,8 +128,13 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 #
 # The related observation, and probably the more important one for a deployment: a containerised node advertised
 # 127.0.0.1 as its ONLY beacon here, because nothing it could see was routable — no port mapping, no reflexive
-# discovery. A browser elsewhere would dial its own loopback. A real deployment needs the node to learn or be told
-# a reachable address, and Nodestar currently exposes no option to tell it one.
+# discovery. A browser elsewhere would dial its own loopback. That is now fixable: set PublicHost to the address
+# visitors reach and the link carries it instead.
+#
+#   -e CUPRINET_NODESTAR_PublicHost=203.0.113.7 -e CUPRINET_NODESTAR_PublicPort=47654
+#
+# The node prints what browsers will dial at startup, so a wrong address is visible in the log rather than only in a
+# visitor's browser console.
 #
 # So: prove this on a native Linux Docker host, where there is one network namespace between the browser and the
 # node instead of three.
