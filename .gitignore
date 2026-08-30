@@ -63,3 +63,6 @@ boundary-packages/
 
 # Compose environment — may hold a packages token. The .example beside it is the tracked one.
 deploy/.env
+
+# Staged NuGet packages for an offline image build (see node/cuprinet-nodestar/Dockerfile).
+offline-packages/

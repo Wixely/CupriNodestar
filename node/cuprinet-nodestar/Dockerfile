@@ -23,13 +23,36 @@ COPY . .
 # CupriNet.* comes from the Wixely GitHub Packages feed, so restore needs a read:packages token. Pass it as a
 # BuildKit secret rather than a build arg — an ARG is baked into image history and readable by anyone who pulls it:
 #   docker build --secret id=packages_token,env=PACKAGES_TOKEN -f node/cuprinet-nodestar/Dockerfile .
+#
+# OR BUILD WITH NO TOKEN AT ALL. If the context carries an `offline-packages/` directory, it becomes the ONLY
+# source and the restore never reaches the network. That is not a convenience: a machine that can build this
+# repository already holds every package in its NuGet cache, so requiring a feed credential to containerise what it
+# just compiled is a demand for a secret the build does not actually need. Stage the set with:
+#
+#   python - <<'PY'
+#   import json,glob,os,shutil
+#   seen={(k.split('/')[0].lower(),k.split('/')[1]) for f in glob.glob('*/obj/project.assets.json')+glob.glob('*/*/obj/project.assets.json')
+#         for t in json.load(open(f,encoding='utf-8-sig')).get('targets',{}).values()
+#         for k,v in t.items() if v.get('type')=='package'}
+#   os.makedirs('offline-packages',exist_ok=True)
+#   for n,v in seen:
+#       s=os.path.expanduser(f'~/.nuget/packages/{n}/{v}/{n}.{v}.nupkg')
+#       if os.path.exists(s): shutil.copy2(s,f'offline-packages/{n}.{v}.nupkg')
+#   PY
+#
+# It is .gitignored — 433 MB of nupkg is a build input, not source. Delete the directory to go back to the feed.
 RUN --mount=type=secret,id=packages_token \
-    sh -c 'TOKEN="$(cat /run/secrets/packages_token 2>/dev/null || true)"; \
-      if [ -n "$TOKEN" ]; then \
-        dotnet nuget update source GitHub-Wixely-Packages --username docker --password "$TOKEN" \
-          --store-password-in-clear-text --configfile nuget.config; \
-      fi; \
-      dotnet restore node/cuprinet-nodestar/cuprinet-nodestar.csproj'
+    sh -c 'if [ -d /src/offline-packages ]; then \
+        echo "Restoring offline from /src/offline-packages"; \
+        dotnet restore node/cuprinet-nodestar/cuprinet-nodestar.csproj --source /src/offline-packages; \
+      else \
+        TOKEN="$(cat /run/secrets/packages_token 2>/dev/null || true)"; \
+        if [ -n "$TOKEN" ]; then \
+          dotnet nuget update source GitHub-Wixely-Packages --username docker --password "$TOKEN" \
+            --store-password-in-clear-text --configfile nuget.config; \
+        fi; \
+        dotnet restore node/cuprinet-nodestar/cuprinet-nodestar.csproj; \
+      fi'
 
 RUN dotnet publish node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release -o /app --no-restore -p:UseAppHost=false
 

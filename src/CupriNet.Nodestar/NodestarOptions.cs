@@ -42,13 +42,15 @@ public sealed class NodestarOptions
     /// <para>Leave it unset on a machine with a routable address of its own: the node discovers what it has, and
     /// port mapping or reflexive observation fill in the rest. Set it whenever the address the node can see is not
     /// the address a visitor must use — behind a container bridge, a NAT that does not speak UPnP, a cloud load
-    /// balancer. A containerised node with nothing set here was observed advertising <c>127.0.0.1</c>, and every
-    /// visitor faithfully dials their own loopback.</para>
+    /// balancer.</para>
     ///
-    /// <para>The other outcome is worse and quieter: a node whose interfaces report nothing routable advertises no
-    /// clearnet beacon at all, and the browser client fails with "This node's link carries no clearnet beacon to
-    /// dial" — it does not fall back to the origin the page was served from. A node meant to be reached by a browser
-    /// that is not on its own machine should set this rather than hope.</para>
+    /// <para><b>A container gets this wrong in one of two ways.</b> An earlier build was seen advertising
+    /// <c>127.0.0.1</c> as its only beacon, so every visitor faithfully dialled their own loopback. On CupriNet
+    /// 0.6.2 the same container advertises nothing at all, and the browser client then fails with "This node's link
+    /// carries no clearnet beacon to dial" — it does not fall back to the origin the page was served from. The
+    /// second is the quieter failure, because it happens in the visitor's browser while the node logs a healthy
+    /// start. That which of the two you get has already changed once between versions is the argument for declaring
+    /// the address rather than inheriting whatever the node guesses.</para>
     ///
     /// <para>It does <b>not</b> affect the HTTP gateway. That is served over whatever address the visitor already
     /// reached, so a node behind a tunnel needs nothing here.</para>

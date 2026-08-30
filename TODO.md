@@ -42,6 +42,20 @@ system, while this one is honest about what a clone actually gets today.
       anchors, `secrets: environment:` (needs Compose 2.23.1+) — because no Compose plugin was installed on the
       machine that checked; one `docker compose config` closes that. And the onion service, for the standing
       reason: no Tor circuit has ever been opened from this repository.
+
+- [x] **The image builds with no feed credential.** The Dockerfile restores from an `offline-packages/` directory
+      when the build context carries one, and only falls back to the feed otherwise.
+
+      Found by needing it: verifying the compose stack against current code meant rebuilding, and no `read:packages`
+      token was available in the session. The GitHub MCP server is authenticated but holds its credential and
+      exposes no way to hand one out, which is correct of it and a dead end for this.
+
+      The way through was that the token was never actually necessary. A machine that can build this repository has
+      already downloaded every package it needs — all 109, checked — so demanding a feed credential to containerise
+      what it just compiled asks for a secret the build does not need. Staged from `~/.nuget/packages` and built
+      with no network and no token.
+
+      Also useful beyond this session: an air-gapped build, and CI without feed access.
 - [~] **Mode 1 from the container — it serves; the WebRTC dial is still unproven.** Checked 30 Aug against a real
       containerised node with the bundle bind-mounted read-only.
 

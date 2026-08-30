@@ -14,10 +14,11 @@
 # WHAT IS VERIFIED HERE, exactly — because "it is in the file" and "it has been run" are different claims and this
 # block is the only place that distinguishes them.
 #
-#   VERIFIED, by running a container with this configuration: the image starts, the gateway answers, the site
-#   mounts read-only and is served, /data is writable by the `app` user, all three ports publish, and the
-#   healthcheck goes healthy in ~8s. Done with `docker run` given these exact flags rather than through Compose,
-#   which was not installed on the machine that checked.
+#   VERIFIED, by running a container with this configuration, on an image built from this repository's current
+#   state: the image starts, the gateway answers, the site mounts read-only and is served, /data is writable by the
+#   `app` user, all three ports publish, the healthcheck goes healthy in ~8s, and both PublicHost branches print
+#   what they should — the dial line when it is set, the warning when it is not. Done with `docker run` given these
+#   exact flags rather than through Compose, which was not installed on the machine that checked.
 #
 #   NOT VERIFIED: Compose's own reading of this file — the profile, the anchors, and `secrets: environment:`,
 #   which needs Compose 2.23.1 or newer. A syntax error here would not have been caught. Run
@@ -39,8 +40,10 @@ x-build: &build
   secrets:
     # The CupriNet packages live on a private GitHub Packages feed, so `restore` needs a token with read:packages.
     # Passed as a build secret rather than a build arg because an ARG is recorded in the image history in clear.
-    # The Dockerfile treats an absent token as "use whatever credentials the environment already has", so this is
-    # harmless when unset — the build simply falls back and fails later if nothing else supplies one.
+    # Harmless when unset: the Dockerfile falls back to whatever credentials the environment already has.
+    #
+    # It can also be built with NO token — stage the packages from your own NuGet cache into `offline-packages/`
+    # and the restore never touches the network. See the Dockerfile; that is how the verification above was built.
     - packages_token
 
 x-common: &common
@@ -80,13 +83,15 @@ services:
     container_name: nodestar
 
     environment:
-      # THE SETTING A CONTAINER MOST OFTEN NEEDS. A node advertises the address its interfaces report, which behind
-      # a bridge is the bridge — a containerised node was observed advertising 127.0.0.1 as its only beacon, so
-      # every visitor dialled their own loopback. The browser client dials the first non-onion beacon in the link
-      # and has no fallback to the origin the page came from, so this is the dial target and nothing else is.
+      # THE SETTING A CONTAINER MOST OFTEN NEEDS, and the one with no working default. A node advertises what its
+      # own interfaces report, which in a container is useless twice over: an earlier build was seen advertising
+      # 127.0.0.1 as its only beacon, so every visitor dialled their own loopback, and on CupriNet 0.6.2 a container
+      # advertises NOTHING at all — measured, running this image. The browser client dials the first non-onion
+      # beacon in the link and has no fallback to the origin the page came from, so with none it simply fails.
       #
-      # Left unset the node warns at startup and prints what it will advertise instead. Set it to the address your
-      # visitors reach: a public IP, or the DNS name in front of it.
+      # That the wrong answer changed between versions is the argument for declaring the right one rather than
+      # hoping. Set it to the address your visitors reach: a public IP, or the DNS name in front of it. Left unset,
+      # the node says which of the two situations it is in at startup.
       CUPRINET_NODESTAR_PublicHost: ${NODESTAR_PUBLIC_HOST:-}
       CUPRINET_NODESTAR_PublicPort: ${NODESTAR_OVERLAY_PORT:-47654}
 
