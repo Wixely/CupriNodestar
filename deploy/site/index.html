@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>A Nodestar</title>
+
+  <!-- The size this page was laid out for. A Mode 1 client fits the page against it rather than assuming.
+       There is deliberately no cupri-feed here: the stock node host serves static files and no live feed, so
+       declaring one would name something that does not exist. -->
+  <meta name="cupri-design" content="1024x768">
+
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0; padding: 48px 32px;
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: #14141a; background: #f6f7fb;
+    }
+    main { max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 34px; margin: 0 0 4px; color: #2244cc; letter-spacing: -0.02em; }
+    .sub { color: #5a6072; margin: 0 0 32px; }
+    .card { background: #fff; border: 1px solid #dfe3ee; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+    .card h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: #5a6072; margin: 0 0 12px; }
+    code { background: #eef1f8; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin-bottom: 8px; }
+    li:last-child { margin-bottom: 0; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e8e9ef; background: #14141a; }
+      h1 { color: #7d9bff; }
+      .sub, .card h2 { color: #9aa0b4; }
+      .card { background: #1c1c24; border-color: #2e2e3c; }
+      code { background: #2a2a36; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>This page is on L2.</h1>
+    <p class="sub">Served by a Nodestar in a container, from <code>deploy/site</code>.</p>
+
+    <div class="card">
+      <h2>Two ways you might be reading it</h2>
+      <ul>
+        <li><strong>Mode 2</strong> — the node fetched this over CupriNet in-process and handed you HTML. Ordinary
+          HTTP from your browser's point of view; no L2 traffic crossed the wire to you.</li>
+        <li><strong>Mode 1</strong> — a WebRTC client made the visit itself, and the node was a peer rather than a
+          server. Needs a client bundle in <code>deploy/client</code>.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Make it yours</h2>
+      <p style="margin:0">Replace this file. Anything in <code>deploy/site</code> is served as the site, and the
+      node re-reads it — no rebuild.</p>
+    </div>
+  </main>
+</body>
+</html>

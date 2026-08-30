@@ -1,0 +1,166 @@
+# Nodestar, composed.
+#
+#   docker compose -f deploy/docker-compose.yml up            # clearnet
+#   docker compose -f deploy/docker-compose.yml --profile onion up   # onion
+#
+# The two are separate services rather than one service with a switch, because they are opposite deployments and the
+# difference is not a flag. A clearnet node publishes ports and advertises an address; an onion node publishes
+# nothing and exists precisely so that no address of its is known. Expressing that as `TOR_ONLY=${...}` would let an
+# operator half-apply it — onion mode with the ports still published is a node whose IP is discoverable, which is
+# the one outcome Tor was chosen to prevent.
+#
+# So the onion service is behind a profile. `up` with no arguments runs the clearnet node and nothing else.
+#
+# WHAT IS VERIFIED HERE, exactly — because "it is in the file" and "it has been run" are different claims and this
+# block is the only place that distinguishes them.
+#
+#   VERIFIED, by running a container with this configuration: the image starts, the gateway answers, the site
+#   mounts read-only and is served, /data is writable by the `app` user, all three ports publish, and the
+#   healthcheck goes healthy in ~8s. Done with `docker run` given these exact flags rather than through Compose,
+#   which was not installed on the machine that checked.
+#
+#   NOT VERIFIED: Compose's own reading of this file — the profile, the anchors, and `secrets: environment:`,
+#   which needs Compose 2.23.1 or newer. A syntax error here would not have been caught. Run
+#   `docker compose -f deploy/docker-compose.yml config` once, and this paragraph can go.
+#
+#   NOT VERIFIED, and for a reason that will not go away by itself: the onion service. It is the same image and the
+#   same entrypoint, but no Tor circuit has ever been opened from this repository, so its bootstrap, its onion
+#   address, and a browser reaching it are all unproven. That is an untested path stated plainly, rather than one
+#   implied to work by sitting in the same file as one that does.
+
+name: nodestar
+
+# ---------------------------------------------------------------------------------------------------------------
+# Shared build definition. Both services are the same image; only configuration differs.
+# ---------------------------------------------------------------------------------------------------------------
+x-build: &build
+  context: ..
+  dockerfile: node/cuprinet-nodestar/Dockerfile
+  secrets:
+    # The CupriNet packages live on a private GitHub Packages feed, so `restore` needs a token with read:packages.
+    # Passed as a build secret rather than a build arg because an ARG is recorded in the image history in clear.
+    # The Dockerfile treats an absent token as "use whatever credentials the environment already has", so this is
+    # harmless when unset — the build simply falls back and fails later if nothing else supplies one.
+    - packages_token
+
+x-common: &common
+  build: *build
+  image: cuprinet-nodestar:latest
+  restart: unless-stopped
+
+  # The runtime image is dotnet/aspnet, which carries no curl, wget or nc — so the check is bash talking to its own
+  # /dev/tcp. It asks the gateway for /healthz and reads the status line, which proves the HTTP front is answering
+  # rather than merely that something holds the socket open.
+  #
+  # THE `bash` IS LOAD-BEARING, NOT DECORATION, and this was found the hard way. `/dev/tcp` is a bash builtin, and the
+  # image's /bin/sh is dash — under it the check fails with "cannot create /dev/tcp/...: Directory nonexistent".
+  # The exec-array form below runs bash directly. Rewriting it as a plain string, or as CMD-SHELL, hands it to
+  # dash instead and the container reports unhealthy while serving perfectly well. Measured both ways: string form
+  # unhealthy, this form healthy in ~8s.
+  #
+  # 8080 is hardcoded on purpose: it is the port INSIDE the container, and remapping belongs on the host side of
+  # `ports`. Setting CUPRINET_NODESTAR_WebPort would move the front and break this check.
+  healthcheck:
+    test:
+      - CMD
+      - bash
+      - -c
+      - 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf "GET /healthz HTTP/1.0\r\n\r\n" >&3 && head -1 <&3 | grep -q " 200 "'
+    interval: 30s
+    timeout: 5s
+    start_period: 20s
+    retries: 3
+
+services:
+  # -------------------------------------------------------------------------------------------------------------
+  # The clearnet node. Mode 2 (the HTTP gateway) out of the box; Mode 1 as well once a client bundle is present.
+  # -------------------------------------------------------------------------------------------------------------
+  nodestar:
+    <<: *common
+    container_name: nodestar
+
+    environment:
+      # THE SETTING A CONTAINER MOST OFTEN NEEDS. A node advertises the address its interfaces report, which behind
+      # a bridge is the bridge — a containerised node was observed advertising 127.0.0.1 as its only beacon, so
+      # every visitor dialled their own loopback. The browser client dials the first non-onion beacon in the link
+      # and has no fallback to the origin the page came from, so this is the dial target and nothing else is.
+      #
+      # Left unset the node warns at startup and prints what it will advertise instead. Set it to the address your
+      # visitors reach: a public IP, or the DNS name in front of it.
+      CUPRINET_NODESTAR_PublicHost: ${NODESTAR_PUBLIC_HOST:-}
+      CUPRINET_NODESTAR_PublicPort: ${NODESTAR_OVERLAY_PORT:-47654}
+
+      # Without this the link carries no Signet for the site, and a browser client that boots correctly then reports
+      # "that node advertises no site in its link" and dials nothing. It defaults to false because a node that is
+      # only a relay should not name a site; a node running from this file exists to serve one.
+      CUPRINET_NODESTAR_AdvertiseSiteInLink: "true"
+
+      CUPRINET_NODESTAR_Concordium: ${NODESTAR_NETWORK:-cuprinet}
+      CUPRINET_NODESTAR_Moniker: ${NODESTAR_MONIKER:-}
+
+    ports:
+      # The HTTP gateway. Bound to localhost by default: this is a plain HTTP origin, and a node put on 0.0.0.0
+      # without a TLS terminator in front of it is served in clear to anyone who can route to the host. Override
+      # NODESTAR_WEB_BIND to 0.0.0.0 once something terminates TLS, or point a tunnel at it and leave it here.
+      - "${NODESTAR_WEB_BIND:-127.0.0.1}:${NODESTAR_WEB_PORT:-8080}:8080"
+
+      # The overlay port, both protocols. UDP is not optional and is easy to omit: TCP alone carries node-to-node
+      # traffic, but WebRTC is UDP, so a browser dial fails with the TCP half published and nothing to say why.
+      - "${NODESTAR_OVERLAY_PORT:-47654}:47654/tcp"
+      - "${NODESTAR_OVERLAY_PORT:-47654}:47654/udp"
+
+    volumes:
+      # The node's identity lives here. Lose it and the site's cupri1… address changes, which is a new site as far
+      # as every visitor is concerned — so it is a named volume rather than a bind mount, to survive `down`.
+      - nodestar-data:/data
+
+      # The site. Read-only because nothing in the node writes to it and a served directory that the server can
+      # rewrite is a larger blast radius than it needs to be.
+      - ./site:/site:ro
+
+      # The browser client bundle, for Mode 1. Empty by default, and an empty directory simply means /_nodestar/app
+      # is not served — the node is still dialable by a client the visitor already has.
+      - ./client:/client:ro
+
+  # -------------------------------------------------------------------------------------------------------------
+  # The onion node. Opt in with --profile onion. NEVER RUN. See the header.
+  # -------------------------------------------------------------------------------------------------------------
+  onion:
+    <<: *common
+    container_name: nodestar-onion
+    profiles: ["onion"]
+
+    environment:
+      # Onion-only: no clearnet beacons, and the WebRTC on-ramp is refused rather than merely unused. That refusal
+      # is the point — WebRTC is clearnet UDP, so offering it would publish the very IP the onion exists to hide.
+      CUPRINET_NODESTAR_TorOnly: "true"
+
+      # Publishes the HTTP front as a second onion, so a browser has a door. Without it the node is reachable only
+      # by other nodes over Tor, and a person with a browser has nowhere to go.
+      CUPRINET_NODESTAR_TorFacePort: "8080"
+
+      CUPRINET_NODESTAR_AdvertiseSiteInLink: "true"
+      CUPRINET_NODESTAR_Concordium: ${NODESTAR_NETWORK:-cuprinet}
+      CUPRINET_NODESTAR_Moniker: ${NODESTAR_MONIKER:-}
+
+    # No `ports`, deliberately, and it is the most important line in this service — which is awkward, because it is
+    # not a line. Publishing any port here would expose on clearnet the node whose whole purpose is to be reachable
+    # only through Tor. Read the onion address out of the log: `Tor face: http://<address>/`.
+    #
+    # Bootstrapping is minutes on a cold start, logged as `Tor [nn%]` rather than swallowed.
+
+    volumes:
+      # A volume of its own. Two nodes cannot share one: the data directory holds the node's identity, and pointing
+      # both at it would have two processes contending for the same keys and the same overlay address.
+      - nodestar-onion-data:/data
+      - ./site:/site:ro
+
+volumes:
+  nodestar-data:
+  nodestar-onion-data:
+
+secrets:
+  packages_token:
+    # Read from the environment, so no token is ever written to a file in the working tree by following the README.
+    # If your Compose is too old for this form, replace it with `file: ./packages_token` and .gitignore that path.
+    environment: GITHUB_PACKAGES_TOKEN

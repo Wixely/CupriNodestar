@@ -60,3 +60,6 @@ probe/*/obj/
 src/CupriNet.Nodestar.Client.CupriFace/client/*
 !src/CupriNet.Nodestar.Client.CupriFace/client/.gitkeep
 boundary-packages/
+
+# Compose environment — may hold a packages token. The .example beside it is the tracked one.
+deploy/.env

@@ -22,7 +22,26 @@ system, while this one is honest about what a clone actually gets today.
       `/client`, and Tor. One environment note is in the Dockerfile so nobody chases it: under Docker inside WSL a
       container stops cleanly a few seconds after the shell session that started it closes — that is WSL reclaiming
       the distro, not the node stopping.
-- [ ] **`docker-compose`** — clearnet and onion. The onion variant is now buildable (Tor is wired); it has never run.
+- [x] **`docker-compose`** — clearnet and onion. `deploy/docker-compose.yml`, with `deploy/README.md`,
+      `.env.example`, and a page in `deploy/site` so `up` shows something.
+
+      Two services rather than one with a switch. A clearnet node publishes ports and advertises an address; an
+      onion node publishes nothing and exists so that no address of its is known. As a flag an operator could
+      half-apply it, and onion mode with the ports still published is the one outcome Tor was chosen to prevent.
+      The onion service is behind a profile, so `up` runs the clearnet node and nothing else.
+
+      **Verified by running a container with this configuration** — gateway answers, site mounts read-only and is
+      served, `/data` writable as `app`, all three ports publish, healthcheck healthy in ~8s.
+
+      **The healthcheck found a real trap.** The runtime image has no curl, wget or nc, so the check is bash
+      talking to `/dev/tcp`. Its `/bin/sh` is dash, where that is not a builtin — as a plain string or CMD-SHELL the
+      check fails with *"cannot create /dev/tcp/...: Directory nonexistent"* and the container reports unhealthy
+      while serving perfectly. Measured both ways; only the exec-array form invoking bash works.
+
+      **Two things remain unverified and are marked in the file.** Compose's own parsing of it — the profile, the
+      anchors, `secrets: environment:` (needs Compose 2.23.1+) — because no Compose plugin was installed on the
+      machine that checked; one `docker compose config` closes that. And the onion service, for the standing
+      reason: no Tor circuit has ever been opened from this repository.
 - [~] **Mode 1 from the container — it serves; the WebRTC dial is still unproven.** Checked 30 Aug against a real
       containerised node with the bundle bind-mounted read-only.
 

@@ -82,6 +82,18 @@ expensive — and a large embedded image will meet the ceiling long before the m
 
 CupriNet's `design/transports-and-limits.md` is the reference for where each number comes from and why.
 
+## Running one in a container
+
+```sh
+docker compose -f deploy/docker-compose.yml up
+```
+
+A node holding a site on L2 and an HTTP gateway in front of it, on <http://127.0.0.1:8080>. Put your own page in
+`deploy/site` — edits are served on the next request, no rebuild. An onion variant is behind `--profile onion`.
+
+See [`deploy/README.md`](deploy/README.md), which is also where the one setting a containerised node usually needs
+is explained: the address visitors reach it at.
+
 ## Samples
 
 A separate samples solution streams **Constellation** — a live view of the node's own overlay — to the browser entirely
