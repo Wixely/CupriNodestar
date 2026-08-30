@@ -102,12 +102,32 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 #   /healthz and /_nodestar       both answer; link.json returns the node's link as JSON
 #   size                          350 MB
 #
-# Still unverified, and each for its own reason:
+# MODE 1 SERVES CORRECTLY from a mounted /client, checked 30 Aug with the bundle bind-mounted read-only:
 #
-#   INBOUND UDP to the container. The WebRTC endpoint binds and logs, but nothing has dialled it from outside, so
-#   whether a browser can reach it depends on a network path no test here has exercised.
-#   MODE 1 from a mounted /client. The bind mount and the app user's read access to it are untried; Mode 1 itself is
-#   proven outside a container by the browser gate.
+#   the app user reads it     the mount arrives root-owned mode 755 and uid 1654 reads it without a chown
+#   the bundle is intact      /_nodestar/app/dotnet.native.wasm is served byte-for-byte, all 14,828,766 of them
+#   the seed is served        /_nodestar/app/intonation.json answers, which is what lets a client dial with no input
+#   a real browser boots it   headless Chromium on the host loaded the module and began a visit
+#
+# TWO THINGS TO SET, because the defaults are wrong for this and the failure is confusing rather than obvious:
+#
+#   CUPRINET_NODESTAR_AdvertiseSiteInLink=true — without it the served client boots, dials nothing, and repeats
+#   "that node advertises no site in its link" forever. The link carries no Signet, so a Pilgrim has nothing to pin.
+#   Publish UDP as well as TCP — `-p 47654:47654/udp`. Without it there is no WebRTC path at all.
+#
+# INBOUND UDP remains UNPROVEN, and the shape of what is known is worth stating exactly. With the port published and
+# the site advertised, a browser on the host got as far as ICE `checking` and then `connection failed`. That is
+# further than a missing route would reach, so signalling and the answer-from-the-link both work; what did not is
+# the connectivity check. The likely cause is this machine rather than the image: the path was Windows → WSL2 → the
+# docker bridge, two layers of NAT, and ICE is exactly the thing that does not survive source-address rewriting.
+#
+# The related observation, and probably the more important one for a deployment: a containerised node advertised
+# 127.0.0.1 as its ONLY beacon here, because nothing it could see was routable — no port mapping, no reflexive
+# discovery. A browser elsewhere would dial its own loopback. A real deployment needs the node to learn or be told
+# a reachable address, and Nodestar currently exposes no option to tell it one.
+#
+# So: prove this on a native Linux Docker host, where there is one network namespace between the browser and the
+# node instead of three.
 #   TOR. Compiled in and wired, but no circuit has ever been opened from anywhere in this repository.
 #   DOCKER COMPOSE, and any multi-container arrangement.
 #

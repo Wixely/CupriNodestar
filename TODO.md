@@ -23,10 +23,34 @@ system, while this one is honest about what a clone actually gets today.
       container stops cleanly a few seconds after the shell session that started it closes — that is WSL reclaiming
       the distro, not the node stopping.
 - [ ] **`docker-compose`** — clearnet and onion. The onion variant is now buildable (Tor is wired); it has never run.
-- [ ] **Mode 1 from the container is unverified.** The reference host now serves a browser client from `ClientRoot`,
-      and that path is proven outside a container — a bundle in the directory, a real browser, dial through to paint.
-      What no one has tried is the container itself: the `/client` bind mount, the `app` user's read access to it,
-      and whether inbound UDP reaches the container at all in a given deployment.
+- [~] **Mode 1 from the container — it serves; the WebRTC dial is still unproven.** Checked 30 Aug against a real
+      containerised node with the bundle bind-mounted read-only.
+
+      **Serving works, and three of the four unknowns are closed.** The `app` user reads a root-owned mode-755
+      mount without a chown, `/_nodestar/app` answers, the wasm is served byte-for-byte (14,828,766 bytes), and
+      headless Chromium on the host loaded the module and started a visit.
+
+      **Two configuration traps found by doing it**, both of which fail confusingly rather than obviously.
+      `AdvertiseSiteInLink` defaults to false, so a containerised node serves a client that boots, dials nothing and
+      repeats *"that node advertises no site in its link"* — the link has no Signet to pin. And UDP has to be
+      published (`-p 47654:47654/udp`) as well as TCP. Both are now in the Dockerfile.
+
+      **Inbound UDP is characterised rather than settled.** With both fixed, the browser reached ICE `checking` and
+      then `connection failed` — further than a missing route would get, so signalling and answer-from-the-link both
+      work and the connectivity check is what failed. The path here was Windows → WSL2 → the docker bridge, and ICE
+      is precisely what does not survive two layers of source-address rewriting. It wants a native Linux Docker
+      host, where there is one network namespace between browser and node rather than three.
+
+      **The finding that matters more for a real deployment:** the containerised node advertised `127.0.0.1` as its
+      only beacon, because nothing it could see was routable. A browser anywhere else would dial its own loopback —
+      and Nodestar exposes no option to tell a node its reachable address. See below.
+
+- [ ] **A node cannot be told its own reachable address.** `CupriNodeOptions` has `AdvertisedBeacons` and
+      `AdvertiseLocalAddresses`; `NodestarOptions` surfaces neither. A node normally learns its address by port
+      mapping or reflexive observation, which is fine on a public host and useless behind a container bridge, a
+      tunnel, or a NAT that does not speak UPnP — exactly the deployments Mode 2 exists for. Found while proving
+      Mode 1 from a container, where the node advertised only `127.0.0.1`.
+
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
 - [ ] **A Mode-1 image.** Needs the wasm bundle, which is a build output a fresh clone does not have. The intended
       answer is restoring `CupriNet.Nodestar.Client.CupriFace` from the feed rather than carrying the Emscripten
