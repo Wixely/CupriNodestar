@@ -374,28 +374,45 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
-- [ ] **Adopt `CupriFace.Web.NativeAot` as the client's host.** CupriFace 0.8.0 ships the browser host as a package
-      for the runtime this client actually uses — NativeAOT-LLVM, not Mono — with an API identical to
-      `CupriFace.Web.Mono`. It carries the frame loop, damage-rect blitting, pointer/touch/wheel/keyboard input, a
-      touch recognizer, the ARIA mirror a screen reader reads, IME composition, the clipboard, browser-decoded
-      video, and the two font faces the wasm Skia build omits.
+- [~] **Adopt `CupriFace.Web.NativeAot` as the client's host — spiked, and the answer is yes.** CupriFace 0.8.0
+      ships the browser host as a package for the runtime this client actually uses (NativeAOT-LLVM, not Mono),
+      carrying the frame loop, damage-rect blitting, pointer/touch/wheel/keyboard, a touch recogniser, the ARIA
+      mirror a screen reader reads, IME composition, the clipboard and browser-decoded video.
 
-      This repository hand-wrote roughly 2,000 lines of exactly that (`BrowserLoop`, `BrowserRenderer`,
-      `BrowserInput`, `BrowserDataChannel`, `imports.js`) because the package did not exist. CupriFace's own notes
-      say the copies made from its old sample "silently arrived without accessibility, the IME and touch" — which
-      describes this client precisely: no touch, no ARIA, no IME, no clipboard.
+      This repository hand-wrote roughly 2,000 lines of that because the package did not exist, and it silently
+      lacks touch, ARIA, IME and clipboard.
 
-      **It is not a drop-in, and the shape of the gap is worth knowing before anyone starts.** `WebHost.Run` takes a
-      `CupriApp`, and this client has no app — it renders whatever document an Oracle response returned, and
-      replaces it when the visitor navigates. `CupriApp` is close to a fit (`Html`, `Css`, `Width`, `Height` are
-      overridable, and `Present(w, h)` looks like the hybrid zoom we hand-rolled), but three things need answering:
-      whether a host can be re-pointed at a new document mid-session, how our async browse loop coexists with a
-      frame pump the host owns, and whether `Present` supersedes `Zoom()` or fights it.
+      **The three questions are answered, by running the host rather than reading it.**
 
-      Worth doing — accessibility and touch are not things to hand-write twice — but as its own piece of work with
-      the browser gate as the arbiter, not folded into something else.
+      1. *Can it be re-pointed at a new document mid-session?* **Yes.** `WebHostCore.Init(app, configure, bridge)`
+         called a second time with a different `CupriApp` yields a NEW document carrying the new content — checked
+         by reading `BuildAriaHtml` before and after, which went from FIRST to SECOND, with
+         `ReferenceEquals(before, after)` false. Navigation is therefore a re-`Init`, not `CupriApp` gymnastics.
+      2. *How does our async browse loop coexist with the host's frame pump?* **We keep our loop.**
+         `WebHostCore.Tick(width, height, nowMs)` is public, returns whether it painted, and synchronously drives
+         layout → paint → `IWebBridge.Present` → `PublishAria`. So we call `Tick` from the loop we already have
+         instead of surrendering it to `WebHost.Run`, and `MarkDirty()` asks for a frame.
+      3. *Does `Present` supersede `Zoom()` or fight it?* **The question conflated two different methods.**
+         `IWebBridge.Present(pixels, byteCount, w, h, dx, dy, dw, dh)` is the damage-rect blit — the output path,
+         which replaces ours. `CupriApp.Present(float, float) -> PresentInfo(LogicalWidth, LogicalHeight, Scale)`
+         is the fit-to-design hook, and it supersedes our `Zoom()` cleanly: same computation, returned rather than
+         applied by us. User zoom is a third thing again (`CupriDocument.Zoom`, `PageZoomEnabled`, `ZoomIn/Out`),
+         which this client does not have at all.
 
+      **The finding that changes the risk, and was not on anyone's list.** All of the above was measured on DESKTOP
+      .NET with a stub `IWebBridge` — no browser, no wasm. `WebHostCore` and `IWebBridge` are portable managed code,
+      so the host integration becomes testable in the ordinary suite instead of only through the eight-minute
+      browser gate. A migration that could only be checked by the gate is a different proposition from one where
+      each step has a unit test.
 
+      **What it replaces:** `BrowserLoop` (105), `BrowserRenderer` (376), `BrowserInput` (131) and most of
+      `imports.js` (531) — about 1,143 lines — become an `IWebBridge` implementation plus a `CupriApp` subclass.
+      The package ships 302 lines of JS that do more. `BrowserDataChannel`, `BrowserNavigation`, `SiteManifest`
+      and `FeedModel` are CupriNet concerns and stay.
+
+      **Suggested staging**, each step gated: implement `IWebBridge` over the existing JS interop and drive `Tick`
+      from the current loop; then adopt the package's `imports.js`/`main.js` and delete ours; then take the
+      capabilities we never had. The ILC feed it needs is already configured here.
 
 - [x] **CupriFace 0.2.12 imported.** Each fix re-verified with a headless render probe rather than taken on trust:
       **#54** `transform-origin` (the sparklines now tween instead of stepping), **#53** `:root` custom properties
