@@ -158,6 +158,38 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// The site being readable by a screen reader.
+    ///
+    /// <para><b>Why this is a gate test and not a unit test.</b> A canvas announces itself and nothing inside it, so
+    /// for anyone using a screen reader every site this client rendered was a blank page. CupriFace's host builds an
+    /// ARIA tree from the layout it painted and the client mirrors it into a hidden element — but "the managed code
+    /// called PublishAria" is not the claim worth pinning. The claim is that a real browser ends up with real
+    /// accessible nodes in its real DOM, which is only observable here.</para>
+    ///
+    /// <para>Asserted on <c>role=</c> rather than on any particular text: what the sample site says is the sample's
+    /// business and will change, whereas a tree with no roles in it is not an accessibility tree at all.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_site_is_exposed_to_a_screen_reader()
+    {
+        _diagnosticsName = "aria-mirror";
+        await ExpectLogAsync("painted");
+
+        // The mirror is published on the same frame as the paint, so one frame of slack rather than a poll.
+        await Task.Delay(120);
+
+        var aria = await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+
+        if (string.IsNullOrWhiteSpace(aria))
+            Assert.Fail(Diagnosis("the accessibility mirror was empty, so the site is a blank page to a screen reader"));
+
+        if (!aria.Contains("role=", StringComparison.Ordinal))
+            Assert.Fail(Diagnosis($"the mirror carried no roles, so there is nothing to navigate: {aria}"));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
     /// The pointer reaching the document, observed through the cursor.
     ///
     /// <para>The cursor is the cleanest evidence available. A canvas has no DOM for the site, so the browser cannot

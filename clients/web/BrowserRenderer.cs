@@ -1,23 +1,36 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using CupriFace;
 using CupriFace.Interaction;
-using SkiaSharp;
+using CupriFace.Web;
 
 namespace CupriNet.Nodestar.Client;
 
 /// <summary>
-/// Paints an L2 site into the page's canvas with CupriFace — HTML and CSS drawn by the engine itself, with no browser
-/// engine and no JavaScript engine, so a hostile site has no script runtime to reach for.
+/// Shows an L2 site, by driving CupriFace's browser host.
+///
+/// <para><b>This used to do the rendering itself</b> — a Skia surface, a hybrid-zoom scale, a premultiplied-to-
+/// straight readback and a blit, plus hit-testing that had to divide by the same zoom the paint had multiplied by.
+/// All of that is now <c>WebHostCore</c>'s, which also brings what was never written here: the ARIA mirror a screen
+/// reader reads, damage-rect painting, IME composition and touch.</para>
+///
+/// <para><b>What is deliberately NOT surrendered</b> is the loop. <c>WebHost.Run</c> would own the frame pump, and
+/// this client's pump is also the async pump that NativeAOT-LLVM wasm has no event loop for (see
+/// <see cref="BrowserLoop"/>). So the host is driven a frame at a time from the pump that already exists, through
+/// <c>WebHostCore.Tick</c>, and everything the host wants to say to the page arrives at
+/// <see cref="CupriFaceBridge"/>.</para>
+///
+/// <para><b>Coordinates are host pixels now, not logical ones.</b> Every dispatch below used to divide by the zoom
+/// before handing a position to the document; the host does that itself, from the same <c>PresentInfo</c> it scaled
+/// the canvas with. Checked rather than assumed — a pointer at device (120,40) on a 2x-scaled document highlighted
+/// an element occupying logical (0,0)-(80,30), which only holds if the host is dividing.</para>
 /// </summary>
-internal static unsafe partial class BrowserRenderer
+internal static partial class BrowserRenderer
 {
-    private static CupriDocument? _document;
+    private static readonly CupriFaceBridge Bridge = new();
 
-    /// <summary>The canvas size the current pixels were drawn for, so a change can be noticed without a JS callback.</summary>
-    private static int _paintedWidth;
-    private static int _paintedHeight;
+    /// <summary>Whether a site has been shown, so input and frames have something to reach.</summary>
+    private static bool _live;
 
     /// <summary>Whether a freshly loaded document is still waiting for its first feed message before being shown.</summary>
     private static bool _awaitingFirstBind;
@@ -26,14 +39,11 @@ internal static unsafe partial class BrowserRenderer
     /// <summary>
     /// Whether anything has been drawn for the current document yet, so the FIRST paint can be announced.
     ///
-    /// <para>Announced because the first paint is no longer a consequence of loading the page — it waits for the feed
-    /// to bind. Anything checking that a site rendered has to be able to observe the moment it did rather than assume
-    /// it followed the fetch, which is precisely the assumption that made the browser gate racy.</para>
+    /// <para>Announced because the first paint is not a consequence of loading the page — it waits for the feed to
+    /// bind. Anything checking that a site rendered has to observe the moment it did rather than assume it followed
+    /// the fetch, which is the assumption that made the browser gate racy.</para>
     /// </summary>
     private static bool _painted;
-
-    [LibraryImport("js", EntryPoint = "cupri_present")]
-    private static partial void Present(IntPtr rgba, int width, int height);
 
     [LibraryImport("js", EntryPoint = "cupri_canvas_width")]
     private static partial int CanvasWidth();
@@ -44,33 +54,47 @@ internal static unsafe partial class BrowserRenderer
     [LibraryImport("js", EntryPoint = "cupri_canvas_scale")]
     private static partial float CanvasScale();
 
-    /// <summary>
-    /// The size the current site is authored for, and the reference hybrid zoom fits it against.
-    ///
-    /// <para>Read from the page rather than assumed. A desktop CupriFace app declares this on its <c>CupriApp</c>;
-    /// an L2 site says it with <c>&lt;meta name="cupri-design"&gt;</c>, and falls back to the old assumption when it
-    /// says nothing. The assumption was wrong in both directions — a page written for a narrow column was scaled
-    /// down as though it wanted a thousand pixels, and a wide one was squeezed.</para>
-    /// </summary>
-    private static float _designWidth = SiteManifest.DefaultDesignWidth;
-    private static float _designHeight = SiteManifest.DefaultDesignHeight;
+    /// <summary>A link the document followed, for <see cref="BrowserNavigation"/> to make a Pilgrimage to.</summary>
+    public static string? TakeNavigation() => Bridge.TakeNavigation();
 
     /// <summary>
-    /// Loads the fetched document and paints it once.
+    /// Points the host at a freshly fetched document.
     ///
-    /// <para>No stylesheet parameter: an L2 document carries its own <c>&lt;style&gt;</c>, which CupriFace collects
-    /// from the DOM. That keeps a page to a single Oracle consult — linking a stylesheet would cost a second full
-    /// round trip for one page.</para>
-    ///
-    /// <para>Fonts are registered from embedded resources because wasm has no system font list to fall back on:
-    /// without them text lays out and paints as nothing, which reads as a broken renderer rather than a missing
-    /// asset.</para>
+    /// <para>A re-<c>Init</c> rather than a mutation, because there is no API to re-point a live host and there does
+    /// not need to be: <c>Init</c> builds a new document each time, which is what navigation means here.</para>
     /// </summary>
     public static void Show(string html)
     {
-        _document = CupriDocument.Load(html);
-        (_designWidth, _designHeight) = SiteManifest.DesignSize(html);
+        var (designWidth, designHeight) = SiteManifest.DesignSize(html);
+        var app = new SiteApp(html, designWidth, designHeight, CanvasScale);
 
+        WebHostCore.Init(app, LoadFonts, Bridge);
+        _live = true;
+
+        // NOT painted here, deliberately.
+        //
+        // A Document-tier page arrives as a TEMPLATE: its live values are {{ }} placeholders that only become text
+        // when the first feed message binds. Painting on arrival therefore shows the raw template — "{{ node.site }}"
+        // scattered across the page — until the snapshot lands a moment later. On a reconnect that is worse than
+        // ugly, because the canvas already holds a perfectly good render of the same site and the flash replaces it
+        // with something that looks broken.
+        //
+        // So the first paint waits for the first bind. The deadline is the safety net: a site with no feed at all
+        // would otherwise never appear, so once it passes the template is painted as-is.
+        _awaitingFirstBind = true;
+        _painted = false;
+        _bindDeadline = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * 3 / 4);   // 750ms
+    }
+
+    /// <summary>
+    /// Registers the embedded faces on a document the host has just built.
+    ///
+    /// <para>Wasm has no system font list to fall back on, so without these text lays out and paints as nothing —
+    /// which reads as a broken renderer rather than a missing asset. This is what the host's <c>configure</c>
+    /// callback is for: the document exists but has not been laid out yet.</para>
+    /// </summary>
+    private static void LoadFonts(CupriDocument document)
+    {
         var assembly = typeof(BrowserRenderer).Assembly;
         foreach (var name in new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" })
         {
@@ -86,34 +110,19 @@ internal static unsafe partial class BrowserRenderer
 
             using var memory = new MemoryStream();
             stream.CopyTo(memory);
-            _document.LoadFont(memory.ToArray());
+            document.LoadFont(memory.ToArray());
         }
-
-        // NOT painted here, deliberately.
-        //
-        // A Document-tier page arrives as a TEMPLATE: its live values are {{ }} placeholders that only become text
-        // when the first feed message binds. Painting on arrival therefore shows the raw template — "{{ node.site }}"
-        // scattered across the page — until the snapshot lands a moment later. On a reconnect that is worse than
-        // ugly, because the canvas already holds a perfectly good render of the same site and the flash replaces it
-        // with something that looks broken.
-        //
-        // So the first paint waits for the first bind. The deadline is the safety net: a site with no feed at all
-        // would otherwise never appear, so once it passes the template is painted as-is — which is exactly the old
-        // behaviour, just no longer the common case.
-        _awaitingFirstBind = true;
-        _painted = false;
-        _bindDeadline = Stopwatch.GetTimestamp() + (Stopwatch.Frequency * 3 / 4);   // 750ms
     }
 
     /// <summary>
-    /// Applies a feed message to the document and repaints.
+    /// Applies a feed message to the document.
     ///
     /// <para>This is what makes a Document-tier site live. It has no JavaScript engine to run, so a snapshot or
     /// update cannot be handled by the page itself — the client binds the payload and asks the engine to rebuild.</para>
     /// </summary>
     public static void Update(ReadOnlySpan<byte> payload)
     {
-        if (_document is null) return;
+        if (!_live) return;
 
         var model = FeedModel.Parse(payload);
         if (model is null)
@@ -122,43 +131,30 @@ internal static unsafe partial class BrowserRenderer
             return;
         }
 
-        _document.Bind(model);
-        _document.Refresh();
+        var document = WebHostCore.Document;
+        document.Bind(model);
+        document.Refresh();
 
         // The document now has real values in it, so it is safe to show. On a reconnect this is the moment the old
         // frame is replaced — by a complete one, rather than by a template mid-bind.
         _awaitingFirstBind = false;
-        Paint();
+        WebHostCore.MarkDirty();
     }
 
     /// <summary>
-    /// Advances the document's animation clock and repaints if anything moved. Called once per frame from the pump.
+    /// One frame. Called from the pump.
     ///
-    /// <para>Without this, CSS animations and transitions never run: the engine does not animate on its own, it
-    /// animates when a host tells it what time it is. A site whose markup declares <c>@keyframes</c> would render
-    /// its first frame and then sit frozen — which is worse than having no animation, because a page that looks
-    /// alive and is not is exactly how a stalled feed disguises itself.</para>
+    /// <para>The host decides whether anything needs painting: <c>Tick</c> answers false when nothing changed, so an
+    /// idle page costs one call and no pixels. That was previously this client's own decision, made by asking the
+    /// document whether its animation clock had moved anything — the host's answer also covers layout, input and
+    /// media, which the old check did not.</para>
     ///
-    /// <para>The repaint is conditional on the engine's own answer rather than unconditional. A full document
-    /// repaint at 60 Hz on a phone is real battery for nothing when the page is static, and the common case for a
-    /// document-tier site <i>is</i> static — so an idle page costs one cheap call per frame and no pixels.</para>
+    /// <para>Resize needs no special handling any more either. The size is an argument to every tick, so a canvas
+    /// that changed simply lays out at the new one; the old code had to notice a change itself and force a repaint.</para>
     /// </summary>
     public static void Animate(double seconds)
     {
-        if (_document is null) return;
-
-        // A resize is a repaint reason in its own right, and it is checked here because the frame pump is already
-        // the one thing running every frame — no JS-to-managed signal needed, and no listener that can fire while
-        // the module is still booting.
-        //
-        // Without it the page does not re-render at all when the window changes: the canvas keeps the backing store
-        // it was given at boot and the browser simply SCALES that bitmap to the new element size, so text and charts
-        // stretch and blur. CupriFace itself re-lays-out at whatever size Render is handed — verified by rendering
-        // the same document at two widths and watching the cards rewrap — so this was never an engine limit, only a
-        // host that never told it the size had changed.
-        var width = CanvasWidth();
-        var height = CanvasHeight();
-        var resized = width != _paintedWidth || height != _paintedHeight;
+        if (!_live) return;
 
         // The safety net for a document whose feed never arrives: show it anyway rather than leave the visitor on a
         // blank canvas — or, worse, on the previous site's page — indefinitely.
@@ -168,105 +164,19 @@ internal static unsafe partial class BrowserRenderer
 
             Console.WriteLine("[cupri] no feed message within 750ms — painting the page unbound");
             _awaitingFirstBind = false;
-            Paint();
-            return;
         }
-
-        if (_document.Animate(seconds) || resized) Paint();
-    }
-
-    /// <summary>Renders the current document to the canvas at its present size.</summary>
-    public static void Paint()
-    {
-        if (_document is null) return;
 
         var width = CanvasWidth();
         var height = CanvasHeight();
         if (width <= 0 || height <= 0) return;
 
-        // Recorded before the work, not after: a mid-resize failure must not leave this claiming the new size was
-        // painted, or the next frame sees no change and the canvas stays stale until something else moves.
-        _paintedWidth = width;
-        _paintedHeight = height;
+        if (!WebHostCore.Tick(width, height, seconds * 1000.0)) return;
 
-        // Skia composites in PREMULTIPLIED alpha; the browser's ImageData wants STRAIGHT alpha. Handing premultiplied
-        // pixels straight to putImageData is the classic way to get a picture that is subtly, inexplicably wrong on
-        // anything translucent — so the read-back converts.
-        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
-
-        // The HOST clears the page background — CupriFace paints the document onto whatever it is given, and a fresh
-        // Skia surface is transparent. Without this the site composited onto the client's own dark chrome: dark text
-        // on a dark backdrop, technically rendered and practically unreadable.
-        //
-        // White because that is what a browser shows a page that asks for nothing. A site that wants otherwise says
-        // so in its own CSS and paints over this.
-        surface.Canvas.Clear(SKColors.White);
-
-        // HYBRID ZOOM, the same policy CupriFace's own Showcase calls by that name: fit the tighter axis and let the
-        // longer one reflow. The document is laid out at a LOGICAL size and drawn at a scale, rather than laid out
-        // at whatever pixel size the canvas happens to be.
-        //
-        // Two things are folded into one scale here, and both matter:
-        //
-        //   devicePixelRatio — without it the document lays out in DEVICE pixels, so on a 2x display a page reflows
-        //   as though the window were twice as wide and every glyph ends up half its intended physical size. It has
-        //   been wrong since the client was written and stayed invisible because headless Chromium reports 1.
-        //
-        //   the zoom itself — min(cssWidth/designWidth, cssHeight/designHeight), so a viewport smaller than the
-        //   design size scales the page down to fit instead of clipping it, and a larger one scales it up.
-        var density = CanvasScale();
-        if (density <= 0) density = 1f;
-
-        var present = density * Zoom();
-        surface.Canvas.Scale(present);
-
-        // Render in LOGICAL units. Skia maps them onto the device pixels above, so text is laid out at the size the
-        // author meant and still painted at the display's real resolution.
-        _document.Render(surface.Canvas, width / present, height / present);
-        surface.Canvas.Flush();
-
-        using var image = surface.Snapshot();
-        var straight = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-        var pixels = new byte[straight.BytesSize];
-
-        fixed (byte* buffer = pixels)
-        {
-            if (!image.ReadPixels(straight, (IntPtr)buffer, straight.RowBytes, 0, 0))
-            {
-                Console.WriteLine("[cupri] could not read back the rendered pixels");
-                return;
-            }
-
-            Present((IntPtr)buffer, width, height);
-        }
-
-        // Once per document, after pixels have actually reached the canvas. Not on every frame: this runs at display
-        // rate while anything is animating, and a per-frame line would bury everything else the client says.
         if (!_painted)
         {
             _painted = true;
             Console.WriteLine("[cupri] painted");
         }
-    }
-
-    /// <summary>
-    /// The hybrid-zoom factor the document is currently laid out at: fit the tighter axis, let the longer reflow.
-    ///
-    /// <para>Shared with the input path deliberately. The document is laid out in LOGICAL units and drawn at a
-    /// scale, so a pointer position in CSS pixels means nothing to it until it is divided by this. Computing it in
-    /// two places would let painting and hit-testing drift apart — and the symptom of that is the worst kind: a
-    /// page that looks right and answers clicks a few pixels away from where they landed.</para>
-    /// </summary>
-    private static float Zoom()
-    {
-        var density = CanvasScale();
-        if (density <= 0) density = 1f;
-
-        var cssWidth = CanvasWidth() / density;
-        var cssHeight = CanvasHeight() / density;
-        if (cssWidth <= 0 || cssHeight <= 0) return 1f;
-
-        return Math.Clamp(Math.Min(cssWidth / _designWidth, cssHeight / _designHeight), 0.25f, 4f);
     }
 
     /// <summary>
@@ -276,79 +186,69 @@ internal static unsafe partial class BrowserRenderer
     /// so a click would hit-test against placeholder text and land somewhere the visitor never saw — and they cannot
     /// have aimed at something that was not on screen.</para>
     /// </summary>
-    private static bool Ready => _document is not null && !_awaitingFirstBind;
+    private static bool Ready => _live && !_awaitingFirstBind;
 
-    /// <summary>Repaints if the document says the frame changed. Every dispatch below funnels through here.</summary>
-    private static void Settle(bool changed)
+    /// <summary>
+    /// A position in CSS pixels, in the host pixels the host expects.
+    ///
+    /// <para>The page reports pointer positions in CSS pixels; the surface the host is ticked with is in DEVICE
+    /// pixels. Only the density separates them — the zoom is the host's own business, and dividing by it here (as
+    /// the hand-rolled renderer had to) would now apply it twice.</para>
+    /// </summary>
+    private static (double X, double Y) Host(float cssX, float cssY)
     {
-        if (changed) Paint();
+        var density = CanvasScale();
+        if (density <= 0) density = 1f;
+        return (cssX * density, cssY * density);
     }
 
     public static void PointerMove(float cssX, float cssY)
     {
         if (!Ready) return;
-
-        var zoom = Zoom();
-        float x = cssX / zoom, y = cssY / zoom;
-
-        Settle(_document!.DispatchPointerMove(x, y));
-
-        // The cursor is the only affordance a canvas-painted site has. Without it a link is indistinguishable from
-        // a paragraph until you click it, which is the difference between a page that feels interactive and one
-        // that feels like a screenshot.
-        try
-        {
-            BrowserInput.SetCursor(CupriDocument.CursorCss(_document.CursorAt(x, y)));
-        }
-        catch (Exception ex)
-        {
-            // Never fatal: a cursor is a nicety, and a hit test that throws must not stop the pointer working.
-            Console.WriteLine($"[cupri] cursor: {ex.GetType().Name}: {ex.Message}");
-        }
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.PointerMove(x, y);
     }
 
-    public static void PointerDown(float cssX, float cssY)
+    /// <summary>
+    /// A press, carrying the click count.
+    ///
+    /// <para>There is no separate click dispatch any more: the host raises one from the press and release, which
+    /// was verified rather than assumed — a down and an up over an element with a click handler fired it exactly
+    /// once. Forwarding the page's own click event as well would activate every link twice.</para>
+    /// </summary>
+    public static void PointerDown(float cssX, float cssY, int clicks)
     {
         if (!Ready) return;
-        var zoom = Zoom();
-        Settle(_document!.DispatchPointer(0, PointerPhase.Down, cssX / zoom, cssY / zoom));
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.PointerDown(x, y, clicks <= 0 ? 1 : clicks);
     }
 
     public static void PointerUp(float cssX, float cssY)
     {
         if (!Ready) return;
-        var zoom = Zoom();
-        Settle(_document!.DispatchPointerUp(cssX / zoom, cssY / zoom));
-    }
-
-    public static void Click(float cssX, float cssY, int clickCount)
-    {
-        if (!Ready) return;
-        var zoom = Zoom();
-        Settle(_document!.DispatchClick(cssX / zoom, cssY / zoom, clickCount));
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.PointerUp(x, y);
     }
 
     /// <summary>
     /// Scrolling, which is what the wheel is for on a page taller than the canvas.
     ///
-    /// <para>The deltas are NOT divided by the zoom. They are a distance the visitor asked the content to move, not
-    /// a position in it — dividing would make a page scroll further the more it had been shrunk to fit, which is
-    /// exactly backwards from how it feels to use.</para>
+    /// <para>The delta is NOT scaled. It is a distance the visitor asked the content to move, not a position in it —
+    /// scaling would make a page scroll further the more it had been shrunk to fit, which is backwards from how it
+    /// feels to use.</para>
     /// </summary>
     public static void Wheel(float cssX, float cssY, float deltaY, float deltaX)
     {
         if (!Ready) return;
-        var zoom = Zoom();
-        Settle(_document!.DispatchWheel(cssX / zoom, cssY / zoom, deltaY, deltaX));
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.Wheel(x, y, deltaY);
     }
 
     /// <summary>
     /// Whether the document has a focused text field, and so whether a keystroke belongs to it.
     ///
-    /// <para>Answered by the engine rather than assumed. As of CupriFace 0.3.0 a plain L2 document never has one —
-    /// an <c>&lt;input&gt;</c> in ordinary markup is not focusable and <c>DispatchKey</c> answers false for
-    /// everything, including the arrows and space — so this is false in practice today. Keys are still forwarded, so
-    /// nothing here has to change when that stops being true.</para>
+    /// <para>Answered by the engine rather than assumed. The host also tells the page directly, through
+    /// <c>IWebBridge.SetTextInput</c>; this remains because the input pump asks the question on its own schedule.</para>
     /// </summary>
     public static bool WantsKeys
     {
@@ -358,7 +258,7 @@ internal static unsafe partial class BrowserRenderer
 
             try
             {
-                return _document!.GetTextInputState().Focused;
+                return WebHostCore.Document.GetTextInputState().Focused;
             }
             catch (Exception)
             {
@@ -368,9 +268,16 @@ internal static unsafe partial class BrowserRenderer
         }
     }
 
+    /// <summary>
+    /// A keystroke.
+    ///
+    /// <para>Still dispatched on the document rather than through the host: <c>WebHostCore</c>'s key entry points
+    /// are shaped for its own JavaScript, which hands text over through a shared buffer, and this client already has
+    /// the string.</para>
+    /// </summary>
     public static void Key(string text, int editKey, int mods)
     {
         if (!Ready) return;
-        Settle(_document!.DispatchKey(text, (EditKey)editKey, (KeyMods)mods));
+        if (WebHostCore.Document.DispatchKey(text, (EditKey)editKey, (KeyMods)mods)) WebHostCore.MarkDirty();
     }
 }

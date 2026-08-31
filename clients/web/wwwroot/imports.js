@@ -112,15 +112,15 @@ mergeInto(LibraryManager.library, {
         // Focus on press: a site with a text field is unusable if typing goes to the page instead of the canvas.
         try { c.focus({ preventScroll: true }); } catch (err) { c.focus(); }
         try { c.setPointerCapture(e.pointerId); } catch (err) { /* not fatal; drags just end at the edge */ }
-        cupri.input.push({ k: 2, x: p.x, y: p.y });
+        // The click count rides on the press. The renderer's host raises a click from the press and the release
+        // by itself, so there is no separate click event to send — sending one would activate every link twice.
+        cupri.input.push({ k: 2, x: p.x, y: p.y, i0: e.detail || 1 });
       });
 
       c.addEventListener('pointerup', function (e) {
         const p = cupri.at(e); if (!p) return;
         try { c.releasePointerCapture(e.pointerId); } catch (err) { /* as above */ }
         cupri.input.push({ k: 3, x: p.x, y: p.y });
-        // Up THEN click, in that order: the document settles its pressed state before anything activates.
-        cupri.input.push({ k: 4, x: p.x, y: p.y, i0: e.detail || 1 });
       });
 
       c.addEventListener('pointercancel', function (e) {

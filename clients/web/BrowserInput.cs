@@ -105,9 +105,12 @@ internal static unsafe partial class BrowserInput
             switch (kind)
             {
                 case Move: BrowserRenderer.PointerMove(x, y); break;
-                case Down: BrowserRenderer.PointerDown(x, y); break;
+
+                // The click count rides on the PRESS now. CupriFace's host raises a click from the press and the
+                // release itself — verified, exactly once — so the page no longer sends a separate click event and
+                // there is no Click case here. Forwarding one as well would activate every link twice.
+                case Down: BrowserRenderer.PointerDown(x, y, i0); break;
                 case Up: BrowserRenderer.PointerUp(x, y); break;
-                case Click: BrowserRenderer.Click(x, y, i0 <= 0 ? 1 : i0); break;
                 case Wheel: BrowserRenderer.Wheel(x, y, a, b); break;
                 case Key: BrowserRenderer.Key(text, i0, i1); break;
             }

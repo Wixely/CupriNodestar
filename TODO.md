@@ -374,6 +374,37 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
+- [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
+      stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
+      drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`
+      receives what the host wants to say to the page.
+
+      **The loop is deliberately NOT surrendered.** `WebHost.Run` would own the frame pump, and this client's pump
+      is also the async pump that NativeAOT-LLVM wasm has no event loop for. So the host is ticked from the loop
+      that already existed.
+
+      **Three things measured on desktop before any of it was written**, which is the payoff of the spike's finding
+      that the host is portable managed code:
+      - Input arrives in HOST (device) pixels, not logical ones — a pointer at device (120,40) over a 2x document
+        highlighted an element occupying logical (0,0)-(80,30). Dividing by the zoom, as the old renderer had to,
+        would now apply it twice.
+      - A press and a release raise a click by themselves, exactly once. The page used to send a third, synthetic
+        click event; forwarding it as well would have activated every link twice. It is gone, and the click count
+        rides on the press.
+      - `Tick` answers false when nothing changed, so an idle page still costs no pixels.
+
+      Hybrid zoom moved into `SiteApp.Present`, with the same arithmetic as the `Zoom()` it replaces. What changes is
+      who owns it: the host scales the canvas AND divides pointer positions by one number, where before painting and
+      hit-testing were kept in step by both calling one private method — a discipline rather than a guarantee.
+
+      Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
+      every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
+
+      **Not wired: following an `<a href>` inside a site.** `IWebBridge.Navigate` records it and nothing collects it.
+      This client has never been able to do that — the only navigation it has is what a visitor types into the
+      chrome — so it is new capability rather than something ported, and a half-wired link that does nothing is
+      worse than one that is honestly absent.
+
 - [~] **Adopt `CupriFace.Web.NativeAot` as the client's host — spiked, and the answer is yes.** CupriFace 0.8.0
       ships the browser host as a package for the runtime this client actually uses (NativeAOT-LLVM, not Mono),
       carrying the frame loop, damage-rect blitting, pointer/touch/wheel/keyboard, a touch recogniser, the ARIA
