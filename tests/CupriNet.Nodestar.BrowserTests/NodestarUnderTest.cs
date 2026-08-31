@@ -80,7 +80,25 @@ public sealed class NodestarUnderTest : IAsyncLifetime
 
         // A document, not a page plus assets: one Oracle consult. The {{ }} binding is what the feed drives, and it
         // is deliberately a value the test can recognise in rendered pixels' worth of DOM.
-        builder.Site.Serve(_ => CupriNet.Rites.OracleResponse.Ok(
+        // TWO pages, switched on the path, because one page cannot show that navigation happened. The handler
+        // ignored the request entirely before, which was fine while the client could only ask for /index.html.
+        builder.Site.Serve(request => request.Path == "/second.html"
+            ? CupriNet.Rites.OracleResponse.Ok(
+                Encoding.UTF8.GetBytes("""
+                    <html><head>
+                    <!-- The SAME feed as the first page, so arriving here does not end the visit. A page that
+                         declares none attends the default name, which this node does not serve, and the attend
+                         ends the visit a moment later — the second page would flash past and the client would
+                         reconnect to the first. -->
+                    <meta name="cupri-feed" content="gate">
+                    <meta name="cupri-design" content="800x600">
+                    <style>body { font:16px sans-serif; } h1 { color:#204; }</style>
+                    </head><body>
+                      <h1>arrived elsewhere</h1>
+                    </body></html>
+                    """),
+                "text/html; charset=utf-8")
+            : CupriNet.Rites.OracleResponse.Ok(
             Encoding.UTF8.GetBytes("""
                 <html><head>
                 <!-- The feed is NOT called "overlay", deliberately. The client used to attend that name and nothing
@@ -107,6 +125,9 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                      grid steps about 48 logical pixels at a time. A one-line link is ~19px tall and the sweep walks
                      straight over it, which looks exactly like input not arriving. */
                   .hand { cursor:pointer; background:#dde4ee; padding:70px 20px; margin-top:12px; }
+                  /* Tall enough for the sweep to land on, short enough to leave the page's other targets
+                     inside the 800x600 design box — anything past it is not on the canvas to be found. */
+                  .inside { display:block; background:#cfe6cf; padding:26px 20px; }
                   /* Something to scroll. Hybrid zoom scales a tall PAGE down to fit rather than clipping it, so a
                      long body would never scroll — an explicitly scrollable box is what the wheel can actually move,
                      and the colour bands make the movement visible in pixels rather than only in the engine. */
@@ -115,6 +136,12 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                 </style></head>
                 <body>
                   <h1>browser gate</h1>
+                  <!-- A link WITHIN the site. A big target for the same reason .hand is one: the gate sweeps the
+                       canvas, and a single line of text is easy to step over. Its LABEL deliberately shares no
+                       words with the second page's heading — a marker that also appears on the page you start
+                       from matches before anything is clicked, which is how the first version of this test passed
+                       while proving nothing. -->
+                  <a class="inside" href="/second.html">onwards</a>
                   <p class="value">{{ value }}</p>
                   <p><a href="cuprinet://intone/nowhere">a link to nowhere</a></p>
                   <div class="hand">a region that asks for a pointer cursor</div>

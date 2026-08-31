@@ -158,6 +158,83 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// Following a link inside a site — a second page, over the connection already open.
+    ///
+    /// <para>This client could not do it at all before: its only navigation was a link a visitor typed into the
+    /// chrome, which tears the WebRTC session down and dials again. An <c>&lt;a href&gt;</c> within a site is one
+    /// Oracle round trip instead.</para>
+    ///
+    /// <para><b>The marker shares no words with anything on the first page.</b> The first version of this test
+    /// looked for "second page", which was also the label of the link that reached it — so it matched before a
+    /// single click and passed while proving nothing. A mutation run exposed that by pointing the link
+    /// off-network, which the client must refuse, and watching it pass anyway.</para>
+    ///
+    /// <para>The sweep clicks every position offering a pointer cursor, which on this page is three different
+    /// things: a decorative region that does nothing, a <c>cuprinet://</c> link the client must REFUSE, and the
+    /// real one. Clicking all three is deliberate — a broken refusal would land somewhere else entirely.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_link_inside_the_site_is_followed()
+    {
+        _diagnosticsName = "in-site-link";
+        await ExpectLogAsync("painted");
+
+        var box = await ViewportAsync();
+        var arrived = false;
+
+        for (var row = 0; row < 10 && !arrived; row++)
+        {
+            for (var col = 0; col < 10 && !arrived; col++)
+            {
+                var x = (float)(box.X + box.Width * (col + 0.5) / 10);
+                var y = (float)(box.Y + box.Height * (row + 0.5) / 10);
+
+                await _page!.Mouse.MoveAsync(x, y);
+                await Task.Delay(30);
+
+                if (await _page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "pointer")
+                    continue;
+
+                await _page.Mouse.ClickAsync(x, y);
+                arrived = await ArrivedAsync(5);
+            }
+        }
+
+        // One last, longer wait. Following a link is not synchronous with the click: the press is queued for the
+        // frame pump, the watcher notices on a later frame, the Oracle answers over the network, and the page that
+        // comes back holds its own first paint until its feed binds it. A sweep can therefore move on several cells
+        // before the page it asked for appears, which is exactly what made an earlier version of this fail while
+        // the mirror it was looking for was, by the end, perfectly correct.
+        arrived = arrived || await ArrivedAsync(30);
+
+        if (!arrived)
+        {
+            var last = await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            Assert.Fail(Diagnosis($"no clickable position reached the site's second page; mirror holds: {last}"));
+        }
+
+        // The off-network link must have been refused rather than followed: a client that followed it would have
+        // left this node and failed the visit.
+        lock (_log)
+            Assert.DoesNotContain(_log, line => line.Contains("visit failed", StringComparison.Ordinal));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>Whether the second page's marker has reached the accessibility mirror yet.</summary>
+    private async Task<bool> ArrivedAsync(int polls)
+    {
+        for (var i = 0; i < polls; i++)
+        {
+            await Task.Delay(100);
+            var aria = await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            if (aria.Contains("arrived elsewhere", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// The site being readable by a screen reader.
     ///
     /// <para><b>Why this is a gate test and not a unit test.</b> A canvas announces itself and nothing inside it, so

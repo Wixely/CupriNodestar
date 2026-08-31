@@ -413,6 +413,59 @@ system, while this one is honest about what a clone actually gets today.
       Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
       every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
 
+      **Following an `<a href>` inside a site works, by hit-testing rather than by anything the host offers.**
+      Clicking a link stays on the open Pilgrimage and costs one Oracle round trip; the connection, the handshake
+      and the pinned Signet are untouched.
+
+      The host is no help here, which is worth recording because it sends you the wrong way. Measured on 0.9.0:
+
+      | clicked | result |
+      |---|---|
+      | `<a href="https://example.com/">` | `IWebBridge.Navigate` fires |
+      | `<a href="/second.html">` | nothing |
+      | `<a href="cuprinet://x">` | nothing |
+      | `OnClick("a", …)` | never fires — even for the absolute one |
+      | `OnClick("button", …)` | fires normally |
+
+      So the host consumes anchor clicks and re-emits only absolute `http(s)` ones — the right shape for "open this
+      in a browser tab", the wrong one for in-app routing, and precisely backwards for a client whose only valid
+      links are the ones it drops. The answer is `HitTest` at the release point, walking `RenderNode.Parent` to the
+      nearest `Element` carrying an `href`.
+
+      **A correction, because it was nearly acted on.** This was first written up as impossible, and an upstream
+      issue was almost filed saying so. The claim rested on "`RenderNode` exposes no element" — which came from an
+      API dumper that printed properties and methods and **not fields**. `Element`, `Tag`, `Parent` and `Children`
+      are fields. A gap in the tool became a stated fact about someone else's library.
+
+      Where a site may send you is a security boundary, so it is one function: another page of this site, or a
+      `cupri1…` node, and nothing else. `http:`, `javascript:`, `data:` and `mailto:` are refused and logged.
+
+- [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
+      stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
+      drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`
+      receives what the host wants to say to the page.
+
+      **The loop is deliberately NOT surrendered.** `WebHost.Run` would own the frame pump, and this client's pump
+      is also the async pump that NativeAOT-LLVM wasm has no event loop for. So the host is ticked from the loop
+      that already existed.
+
+      **Three things measured on desktop before any of it was written**, which is the payoff of the spike's finding
+      that the host is portable managed code:
+      - Input arrives in HOST (device) pixels, not logical ones — a pointer at device (120,40) over a 2x document
+        highlighted an element occupying logical (0,0)-(80,30). Dividing by the zoom, as the old renderer had to,
+        would now apply it twice.
+      - A press and a release raise a click by themselves, exactly once. The page used to send a third, synthetic
+        click event; forwarding it as well would have activated every link twice. It is gone, and the click count
+        rides on the press.
+      - `Tick` answers false when nothing changed, so an idle page still costs no pixels.
+
+      Hybrid zoom moved into `SiteApp.Present`, with the same arithmetic as the `Zoom()` it replaces. What changes is
+      who owns it: the host scales the canvas AND divides pointer positions by one number, where before painting and
+      hit-testing were kept in step by both calling one private method — a discipline rather than a guarantee.
+
+      Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
+      every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
+
       **Following an `<a href>` inside a site is NOT POSSIBLE on CupriFace 0.8.0 or 0.9.0.** It was built, it did
       not work, and it is reverted. Measured on the desktop host, which is where this is cheap to establish:
 

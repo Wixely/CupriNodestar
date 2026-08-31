@@ -209,80 +209,138 @@ static async Task<Departure> VisitAsync(string link, BouncyCastleSuite suite)
     Console.WriteLine("[cupri] pilgrimage complete — the Signet answered");
     BrowserNavigation.Status($"connected — {Bech32.Fingerprint(signet)}");
 
-    // ONE consult for the whole document. An Oracle response is a single message over a channel where every fetch
-    // costs a full round trip, so a site that links its stylesheet pays twice for one page — and CupriFace reads
-    // <style> elements out of the DOM anyway, so a self-contained document is both cheaper and the natural shape.
-    var page = await shrine.ConsultAsync(OracleRequest.Get("/index.html"));
-    Console.WriteLine($"[cupri] site answered {page.Status} ({page.Body.Length} bytes, {page.ContentType})");
-    // Loaded, not yet shown: the page is a template until the first feed message binds it, so the renderer holds
-    // the first paint back rather than flashing "{{ node.site }}" at the visitor.
-    var html = page.AsText();
-    BrowserRenderer.Show(html);
-    Console.WriteLine("[cupri] document loaded — holding the first paint until the feed binds it");
-
-    // Which feed this page is about, according to the page. Read before attending, because attending is the next
-    // thing that happens — and a client that renders whatever site it is pointed at has no business knowing any
-    // particular site's feed names.
-    var feed = SiteManifest.FeedName(html);
-    if (feed != SiteManifest.DefaultFeed) Console.WriteLine($"[cupri] the site declares its feed as '{feed}'");
-
-    // The visit ends when the visitor navigates. Watching runs alongside the feed rather than between messages: an
-    // idle feed can be silent indefinitely, and an address bar that only responds when data happens to arrive would
-    // feel broken exactly when the node is quiet.
-    using var navigating = new CancellationTokenSource();
-    var navigated = new TaskCompletionSource<Departure>(TaskCreationOptions.RunContinuationsAsynchronously);
-    _ = WatchForNavigationAsync(navigating, navigated);
-
-    // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage. Each
-    // message binds into the document and repaints: the site has no JavaScript engine, so keeping the view current
-    // is the client's job, not the page's.
-    try
-    {
-        await foreach (var frame in shrine.AttendAsync(feed, navigating.Token))
-        {
-            Console.WriteLine($"[cupri] feed {frame.Kind} ({frame.Payload.Length} bytes)");
-            if (frame.Kind is AuspiceFrameKind.Snapshot or AuspiceFrameKind.Update)
-                BrowserRenderer.Update(frame.Payload);
-            else if (frame.Kind is AuspiceFrameKind.Sealed)
-                Console.WriteLine($"[cupri] feed sealed: {frame.AsText()}");
-        }
-    }
-    catch (OperationCanceledException)
-    {
-        Console.WriteLine("[cupri] leaving for another node");
-    }
-
-    return navigated.Task.IsCompletedSuccessfully ? navigated.Task.Result : Departure.Ended;
-}
-
-/// <summary>Ends the current visit the moment the visitor asks to go somewhere, and says where.</summary>
-static async Task WatchForNavigationAsync(CancellationTokenSource navigating, TaskCompletionSource<Departure> navigated)
-{
-    while (!navigating.IsCancellationRequested)
-    {
-        await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
-
-        var departure =
-            BrowserNavigation.TakePendingLink() is { } next ? Departure.To(next)
-            : BrowserNavigation.TakeBackRequest() ? Departure.Backwards
-            : (Departure?)null;
-
-        if (departure is null) continue;
-
-        navigated.TrySetResult(departure.Value);
-        await navigating.CancelAsync().ConfigureAwait(false);
-        return;
-    }
-}
-
-/// <summary>Waits for the address bar, or for Back — the two ways out of an idle client.</summary>
-static async Task<Departure> WaitForDepartureAsync()
-{
+    // The PAGE loop, inside the one Pilgrimage.
+    //
+    // A link inside a site changes the document and nothing else: the connection, the handshake and the pinned
+    // Signet all stay as they are, and the new page is one Oracle round trip away. Treating it as a departure
+    // would tear down a WebRTC session and dial the same node again for a page already reachable.
+    var path = "/index.html";
     while (true)
     {
-        await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
-        if (BrowserNavigation.TakePendingLink() is { } link) return Departure.To(link);
-        if (BrowserNavigation.TakeBackRequest()) return Departure.Backwards;
+        // ONE consult for the whole document. An Oracle response is a single message over a channel where every fetch
+        // costs a full round trip, so a site that links its stylesheet pays twice for one page — and CupriFace reads
+        // <style> elements out of the DOM anyway, so a self-contained document is both cheaper and the natural shape.
+        var page = await shrine.ConsultAsync(OracleRequest.Get(path));
+        Console.WriteLine($"[cupri] site answered {page.Status} ({page.Body.Length} bytes, {page.ContentType})");
+        // Loaded, not yet shown: the page is a template until the first feed message binds it, so the renderer holds
+        // the first paint back rather than flashing "{{ node.site }}" at the visitor.
+        var html = page.AsText();
+        BrowserRenderer.Show(html);
+        Console.WriteLine("[cupri] document loaded — holding the first paint until the feed binds it");
+
+        // Which feed this page is about, according to the page. Read before attending, because attending is the next
+        // thing that happens — and a client that renders whatever site it is pointed at has no business knowing any
+        // particular site's feed names.
+        var feed = SiteManifest.FeedName(html);
+        if (feed != SiteManifest.DefaultFeed) Console.WriteLine($"[cupri] the site declares its feed as '{feed}'");
+
+        // The visit ends when the visitor navigates. Watching runs alongside the feed rather than between messages: an
+        // idle feed can be silent indefinitely, and an address bar that only responds when data happens to arrive would
+        // feel broken exactly when the node is quiet.
+        using var navigating = new CancellationTokenSource();
+        var navigated = new TaskCompletionSource<Departure>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = WatchForNavigationAsync(navigating, navigated);
+
+        // Live data over the same session, on its own stream — the page fetch and the feed share one Pilgrimage. Each
+        // message binds into the document and repaints: the site has no JavaScript engine, so keeping the view current
+        // is the client's job, not the page's.
+        try
+        {
+            await foreach (var frame in shrine.AttendAsync(feed, navigating.Token))
+            {
+                Console.WriteLine($"[cupri] feed {frame.Kind} ({frame.Payload.Length} bytes)");
+                if (frame.Kind is AuspiceFrameKind.Snapshot or AuspiceFrameKind.Update)
+                    BrowserRenderer.Update(frame.Payload);
+                else if (frame.Kind is AuspiceFrameKind.Sealed)
+                    Console.WriteLine($"[cupri] feed sealed: {frame.AsText()}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected: the watcher cancels the attend the moment the visitor goes anywhere, including to another page
+            // of this same site.
+        }
+
+        var departure = navigated.Task.IsCompletedSuccessfully ? navigated.Task.Result : Departure.Ended;
+
+        // Another page of the same site keeps the Pilgrimage and goes round again. Everything else ends the visit.
+        if (departure.Path is not { } nextPath)
+        {
+            if (departure.Link is not null) Console.WriteLine("[cupri] leaving for another node");
+            return departure;
+        }
+
+        Console.WriteLine($"[cupri] following a link within the site to {nextPath}");
+        BrowserNavigation.Status($"loading {nextPath} …");
+        path = nextPath;
+        }
+    }
+
+    /// <summary>Ends the current visit the moment the visitor asks to go somewhere, and says where.</summary>
+    static async Task WatchForNavigationAsync(CancellationTokenSource navigating, TaskCompletionSource<Departure> navigated)
+    {
+        while (!navigating.IsCancellationRequested)
+        {
+            await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
+
+            var departure =
+                BrowserNavigation.TakePendingLink() is { } next ? Departure.To(next)
+                : BrowserNavigation.TakeBackRequest() ? Departure.Backwards
+                : FollowedLink() is { } inside ? inside
+                : (Departure?)null;
+
+            if (departure is null) continue;
+
+            navigated.TrySetResult(departure.Value);
+            await navigating.CancelAsync().ConfigureAwait(false);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// A link the SITE followed, resolved into something this client is willing to act on.
+    ///
+    /// <para><b>This is a security boundary, not routing.</b> The href comes out of a document a remote node served, so
+    /// it is the one place a site influences where the client goes. Exactly two answers are allowed: another page of
+    /// the same site, fetched over the Pilgrimage already open, or another CupriNet node named by a <c>cupri1…</c>
+    /// link. Anything else — <c>http:</c>, <c>javascript:</c>, <c>data:</c>, a protocol handler — is refused and said
+    /// so, because a site that could send the browser to an arbitrary URL could send a visitor somewhere this client's
+    /// whole design exists to avoid.</para>
+    ///
+    /// <para>Returning null is the common case: nothing was followed this frame.</para>
+    /// </summary>
+    static Departure? FollowedLink()
+    {
+        if (BrowserRenderer.TakeNavigation() is not { } href || string.IsNullOrWhiteSpace(href)) return null;
+
+        var target = href.Trim();
+
+        // Another node, named the only way a node can be named.
+        if (IntonationUri.TryParse(target, out _, out _)) return Departure.To(target);
+
+        // A scheme of any kind is a site trying to leave CupriNet. There are no off-network links here.
+        if (target.Contains("://", StringComparison.Ordinal) ||
+            target.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+            target.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            target.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[cupri] refused an off-network link: {target}");
+            return null;
+        }
+
+        // Everything else is a path on the site being visited, rooted so a relative href cannot climb anywhere
+        // unexpected — the Oracle takes a path, and this client has no notion of a current directory.
+        return Departure.Within(target.StartsWith('/') ? target : "/" + target);
+    }
+
+    /// <summary>Waits for the address bar, or for Back — the two ways out of an idle client.</summary>
+    static async Task<Departure> WaitForDepartureAsync()
+    {
+        while (true)
+        {
+            await BrowserLoop.NextFrameAsync().ConfigureAwait(false);
+            if (BrowserNavigation.TakePendingLink() is { } link) return Departure.To(link);
+            if (BrowserNavigation.TakeBackRequest()) return Departure.Backwards;
     }
 }
 
@@ -292,12 +350,21 @@ static async Task<Departure> WaitForDepartureAsync()
 /// <para>Three outcomes rather than a nullable link, because "went back" and "stopped on its own" need entirely
 /// different answers — one pops the history, the other tries to reconnect — and a null cannot tell them apart.</para>
 /// </summary>
-internal readonly record struct Departure(string? Link, bool Back)
+internal readonly record struct Departure(string? Link, bool Back, string? Path)
 {
     /// <summary>The visit ended without the visitor asking: the channel dropped, or the node went away.</summary>
-    public static Departure Ended => new(null, false);
+    public static Departure Ended => new(null, false, null);
 
-    public static Departure To(string link) => new(link, false);
+    public static Departure To(string link) => new(link, false, null);
 
-    public static Departure Backwards => new(null, true);
+    public static Departure Backwards => new(null, true, null);
+
+    /// <summary>
+    /// Another page of the SAME site, reached by a link inside it.
+    ///
+    /// <para>Not a departure at all: the Pilgrimage stays open and only the document changes. Collapsing this into
+    /// <see cref="To"/> would make every in-site link tear down a WebRTC session and dial the same node again for a
+    /// page that was one round trip away.</para>
+    /// </summary>
+    public static Departure Within(string path) => new(null, false, path);
 }

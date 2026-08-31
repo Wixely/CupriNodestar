@@ -32,6 +32,12 @@ internal static partial class BrowserRenderer
     /// <summary>Whether a site has been shown, so input and frames have something to reach.</summary>
     private static bool _live;
 
+    /// <summary>The current site, kept so the scale it presents at can be asked for when hit-testing.</summary>
+    private static SiteApp? _app;
+
+    /// <summary>The link the pointer went down on, so a release only follows one it started on.</summary>
+    private static string? _pressedLink;
+
     /// <summary>Whether a freshly loaded document is still waiting for its first feed message before being shown.</summary>
     private static bool _awaitingFirstBind;
     private static long _bindDeadline;
@@ -54,8 +60,29 @@ internal static partial class BrowserRenderer
     [LibraryImport("js", EntryPoint = "cupri_canvas_scale")]
     private static partial float CanvasScale();
 
-    /// <summary>A link the document followed, for <see cref="BrowserNavigation"/> to make a Pilgrimage to.</summary>
-    public static string? TakeNavigation() => Bridge.TakeNavigation();
+    /// <summary>
+    /// A link the visitor followed inside the site, taken and cleared.
+    ///
+    /// <para>Two sources, and the second is the one that matters. The host reports a followed link through
+    /// <c>IWebBridge.Navigate</c> — but ONLY for absolute <c>http(s)</c> URLs, which are exactly the links this
+    /// client must refuse. A relative <c>href</c>, which is what a site actually uses to link its own pages, is
+    /// swallowed: neither <c>Navigate</c> nor an <c>OnClick("a", …)</c> handler ever sees it. Both measured against
+    /// 0.9.0.</para>
+    ///
+    /// <para>So the relative case is recovered by hit-testing the release position and walking up to the nearest
+    /// element carrying an <c>href</c>. <c>RenderNode</c> exposes <c>Element</c> and <c>Parent</c>, which is what
+    /// makes that possible without any help from the host.</para>
+    /// </summary>
+    public static string? TakeNavigation()
+    {
+        if (Bridge.TakeNavigation() is { } fromHost) return fromHost;
+
+        var followed = _followed;
+        _followed = null;
+        return followed;
+    }
+
+    private static string? _followed;
 
     /// <summary>
     /// Points the host at a freshly fetched document.
@@ -66,9 +93,10 @@ internal static partial class BrowserRenderer
     public static void Show(string html)
     {
         var (designWidth, designHeight) = SiteManifest.DesignSize(html);
-        var app = new SiteApp(html, designWidth, designHeight, CanvasScale);
+        _app = new SiteApp(html, designWidth, designHeight, CanvasScale);
+        _pressedLink = null;
 
-        WebHostCore.Init(app, LoadFonts, Bridge);
+        WebHostCore.Init(_app, LoadFonts, Bridge);
         _live = true;
 
         // NOT painted here, deliberately.
@@ -220,6 +248,7 @@ internal static partial class BrowserRenderer
     {
         if (!Ready) return;
         var (x, y) = Host(cssX, cssY);
+        _pressedLink = LinkAt(cssX, cssY);
         WebHostCore.PointerDown(x, y, clicks <= 0 ? 1 : clicks);
     }
 
@@ -228,6 +257,51 @@ internal static partial class BrowserRenderer
         if (!Ready) return;
         var (x, y) = Host(cssX, cssY);
         WebHostCore.PointerUp(x, y);
+
+        // A link is followed only when the press and the release landed on the SAME one, which is what every
+        // browser does and what lets someone change their mind by dragging off a link before letting go.
+        var released = LinkAt(cssX, cssY);
+        if (released is not null && released == _pressedLink) _followed = released;
+        _pressedLink = null;
+    }
+
+    /// <summary>
+    /// The <c>href</c> under a position in CSS pixels, or null.
+    ///
+    /// <para>Hit-testing is in LOGICAL units, which is the one place this client still has to undo the scale itself:
+    /// the host divides for its own dispatch but takes no part in this. The scale comes from the same
+    /// <c>PresentInfo</c> the host laid the page out with, asked for rather than recomputed, so a hit test cannot
+    /// drift from the paint the way two independent copies of the arithmetic would.</para>
+    ///
+    /// <para>It walks up from the hit node because a click lands on whatever is innermost — the text inside the
+    /// anchor, or an image inside it — and the <c>href</c> belongs to an ancestor.</para>
+    /// </summary>
+    private static string? LinkAt(float cssX, float cssY)
+    {
+        if (_app is null) return null;
+
+        try
+        {
+            var density = CanvasScale();
+            if (density <= 0) density = 1f;
+
+            var scale = _app.Present(CanvasWidth(), CanvasHeight()).Scale;
+            if (scale <= 0) scale = 1f;
+
+            var node = WebHostCore.Document.HitTest(cssX * density / scale, cssY * density / scale);
+            for (var walk = node; walk is not null; walk = walk.Parent)
+                if (walk.Element?.GetAttribute("href") is { Length: > 0 } href)
+                    return href;
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // A hit test that throws must not take the pointer down with it: the click still belongs to the
+            // document, and a link that cannot be resolved is simply not a link.
+            Console.WriteLine($"[cupri] link hit test: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
