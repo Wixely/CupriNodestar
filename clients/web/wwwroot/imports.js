@@ -517,6 +517,27 @@ mergeInto(LibraryManager.library, {
     c.style.cursor = css;
   },
 
+  // The accessibility tree CupriFace built from the layout it just painted, mirrored into a hidden element so the
+  // browser's own accessibility machinery can read the site out.
+  //
+  // WITHOUT THIS A SITE IS AN EMPTY PAGE to anyone using a screen reader — a canvas announces itself and nothing
+  // inside it, and this client had no answer to that at all. The renderer knows the roles and labels because it did
+  // the layout; this is only the last hop.
+  //
+  // innerHTML, on a string this client's own renderer produced from the document it fetched. It is not arbitrary
+  // remote markup: the tree is roles and labels, and the site never reaches the page's DOM (see index.html on why
+  // the header is chrome). Skipped when unchanged, because rewriting a subtree resets a screen reader's cursor and
+  // would fight anyone trying to read down the page.
+  cupri_aria__deps: ['$cupri'],
+  cupri_aria: function (ptr) {
+    const host = document.getElementById('aria');
+    if (!host) return;
+    const html = UTF8ToString(ptr);
+    if (html === cupri.aria) return;
+    cupri.aria = html;
+    host.innerHTML = html;
+  },
+
   // Copies the next inbound message into the supplied buffer. Returns its length, 0 when the inbox is empty, or -1
   // if the buffer is too small (the message is kept, so a bigger buffer can retry rather than lose it).
   cupri_recv__deps: ['$cupri'],

@@ -53,6 +53,23 @@
        and CSS itself — no browser engine, and no JavaScript engine for a hostile site to reach for. -->
   <canvas id="viewport"></canvas>
 
+  <!--
+    The accessibility mirror.
+
+    A canvas is opaque to a screen reader: it announces "canvas" and stops, so every site this client rendered was,
+    to anyone using one, a blank page. CupriFace builds an ARIA tree from the same layout it paints, and this is
+    where that tree is written so the browser's own accessibility machinery can read it.
+
+    It is EMPTY of styling on purpose beyond being off-screen — clip-rect rather than `display:none` or
+    `visibility:hidden`, both of which remove an element from the accessibility tree as well as from the page, which
+    would defeat the entire point.
+
+    aria-live is deliberately absent: this mirrors a whole document, and announcing every repaint would talk over
+    the reader continuously. It is a static tree to navigate, not a stream of announcements.
+  -->
+  <div id="aria" role="region" aria-label="Site content"
+       style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap"></div>
+
   <pre id="log"></pre>
 
   <script type="module">

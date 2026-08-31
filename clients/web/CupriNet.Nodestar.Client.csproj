@@ -59,6 +59,17 @@
   <ItemGroup>
     <PackageReference Include="CupriFace" Version="$(CupriFaceVersion)" />
 
+    <!-- The browser host, for the runtime this client actually uses. It carries the frame pump, the damage-rect
+         blit, touch, the ARIA mirror, IME composition and the clipboard — all of which this project had hand-written
+         or gone without.
+
+         Its buildTransitive targets supply the wasm link facts that were duplicated by hand below: the Skia and
+         HarfBuzz archives, the DirectPInvoke names, the Emscripten toolchain variables, and a js-library of its
+         own. Ours are removed where they overlapped, because two copies of a NativeLibrary reach emcc as two
+         archives. What stays is this project's OWN js-library arg, whose symbols are `cupri_*` against the host's
+         `js_*` — checked, they do not collide. -->
+    <PackageReference Include="CupriFace.Web.NativeAot" Version="$(CupriFaceVersion)" />
+
     <!-- CupriNet.Shrine, not CupriNet.Hosting. A Pilgrim visits a site; it does not run an overlay node, and Hosting
          binds a TCP listener — PlatformNotSupportedException in a browser. Upstream split the Pilgrim side out for
          exactly this (CupriNet#1), which deleted the hand transcription this client used to carry.
@@ -78,22 +89,15 @@
     <PackageReference Include="HarfBuzzSharp.NativeAssets.WebAssembly" Version="8.3.0.1"
                       GeneratePathProperty="true" ExcludeAssets="all" />
 
-    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_LLVM_ROOT=$(EmscriptenUpstreamBinPath)" />
-    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_BINARYEN_ROOT=$(EmscriptenSdkToolsPath)" />
-    <EmscriptenEnvVars Include="DOTNET_EMSCRIPTEN_NODE_JS=$(EmscriptenNodeBinPath)node$(ExecutableExtensionName)" />
-    <EmscriptenEnvVars Include="EM_CACHE=$(EmscriptenCacheSdkCacheDir)" />
+    <!-- The Emscripten toolchain variables, the Skia/HarfBuzz archives and the DirectPInvoke names that used to be
+         listed here now come from CupriFace.Web.NativeAot's buildTransitive targets, which set exactly the same
+         things. Listing them twice puts each archive on the emcc command line twice. -->
   </ItemGroup>
 
   <ItemGroup>
     <!-- The RTCPeerConnection shim, linked into the module. Without it the DllImport("js") targets are unresolved
          symbols and the emcc link fails outright — which is the failure mode you want, rather than a runtime stub. -->
     <LinkerArg Include="--js-library &quot;$(MSBuildProjectDirectory)/wwwroot/imports.js&quot;" />
-
-    <NativeLibrary Include="$(PkgSkiaSharp_NativeAssets_WebAssembly)/buildTransitive/netstandard1.0/libSkiaSharp.a/3.1.56/st/libSkiaSharp.a" />
-    <NativeLibrary Include="$(PkgHarfBuzzSharp_NativeAssets_WebAssembly)/buildTransitive/netstandard1.0/libHarfBuzzSharp.a/3.1.56/st/libHarfBuzzSharp.a" />
-    <DirectPInvoke Include="libSkiaSharp" />
-    <DirectPInvoke Include="libHarfBuzzSharp" />
-    <DirectPInvoke Include="js" />
   </ItemGroup>
 
   <!--
