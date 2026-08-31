@@ -150,10 +150,11 @@ system, while this one is honest about what a clone actually gets today.
       template's own parameter was the thing stopping configuration working, and the parameter is gone. And the
       startup banner hard-coded 8080, so it printed where the site was not.
 
-      One caveat that is not the template's: it floats to `0.1.0-*`, which resolves to **alpha.4** — the newest
-      published — and that predates the Mode-2 gateway binding, so the page serves with `{{ }}` showing. Against
-      the current build the same generated project binds correctly (`served over L2`, ticks counting). It fixes
-      itself the moment anything newer publishes, which is the artifact quota's problem rather than this one's.
+      The caveat that was not the template's is **gone as of v0.1.0-alpha.9**. It floats to `0.1.0-*`, which
+      resolved to **alpha.4** — the newest that had actually published — and alpha.4 predates the Mode-2 gateway
+      binding, so a freshly generated site served with `{{ }}` showing. alpha.5 and alpha.8 were tagged but never
+      published, so the feed stayed on alpha.4 for a week and the README's headline promise was quietly broken for
+      anyone who tried it. Publishing again fixed it without the template changing.
 
 ## Not wired up
 
@@ -366,7 +367,9 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Infrastructure
 
-- [x] **CI runs, and is green.** Pushed to [Wixely/CupriNodestar](https://github.com/Wixely/CupriNodestar) (private);
+- [x] **CI runs, and is green.** Pushed to [Wixely/CupriNodestar](https://github.com/Wixely/CupriNodestar) (public
+      since 31 Aug — while it was private its Actions storage came out of the account allowance, which is what cost
+      alpha.5 and alpha.8);
       run #1 passed every job — both solutions built and tested, the CupriFace boundary enforced on a clean runner,
       Mode 1 exercised in real Chromium, and runnable examples produced for three RIDs. None of the failures
       [PUSHING.md](PUSHING.md) predicted actually happened; the feed authenticated on the automatic `GITHUB_TOKEN`.
