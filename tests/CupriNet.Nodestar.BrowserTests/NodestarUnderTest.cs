@@ -125,6 +125,12 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                      grid steps about 48 logical pixels at a time. A one-line link is ~19px tall and the sweep walks
                      straight over it, which looks exactly like input not arriving. */
                   .hand { cursor:pointer; background:#dde4ee; padding:70px 20px; margin-top:12px; }
+                  /* A hover that actually CHANGES something. Every other rule here only declares a cursor, which
+                     the page reports without repainting a pixel — so nothing on this canvas could produce a small
+                     damage rectangle at all. It stays because a site whose hovers are inert is not a realistic
+                     one, and because it is what `Every_repaint_currently_uploads_the_whole_surface` needs in order
+                     to mean anything the day the engine starts narrowing damage under scale. */
+                  .hand:hover { background:#b9c8de; }
                   /* Tall enough for the sweep to land on, short enough to leave the page's other targets
                      inside the 800x600 design box — anything past it is not on the canvas to be found. */
                   .inside { display:block; background:#cfe6cf; padding:26px 20px; }

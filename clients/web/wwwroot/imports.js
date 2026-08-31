@@ -366,12 +366,41 @@ mergeInto(LibraryManager.library, {
   // Blits a rendered frame onto the page's canvas. The bytes are STRAIGHT (unpremultiplied) RGBA because that is
   // what ImageData means; the managed side converts out of Skia's premultiplied surface before calling.
   cupri_present__deps: ['$cupri'],
-  cupri_present: function (rgba, w, h) {
-    const canvas = globalThis.__cupri && globalThis.__cupri.canvas;
+  cupri_present: function (rgba, w, h, dx, dy, dw, dh) {
+    const canvasHost = globalThis.__cupri;
+    const canvas = canvasHost && canvasHost.canvas;
     if (!canvas) return;
+
     // A view over the wasm heap, not a copy: putImageData reads it synchronously, so there is nothing to outlive.
+    //
+    // THE BUFFER IS ALWAYS THE WHOLE SURFACE, whatever changed — measured, by ticking a document with a small hover
+    // change and comparing the byte count against both products: an 82x34 damage region still arrived as 1,920,000
+    // bytes for an 800x600 surface. So the rectangle says which part CHANGED; it does not describe the buffer.
     const view = new Uint8ClampedArray(HEAPU8.buffer, rgba, w * h * 4);
-    canvas.getContext('2d').putImageData(new ImageData(view, w, h), 0, 0);
+    const image = new ImageData(view, w, h);
+    const ctx = canvas.getContext('2d');
+
+    // putImageData's seven-argument form uploads only the dirty rectangle, which is the entire point: a hover on one
+    // link repaints a few thousand pixels rather than the whole canvas, every frame, on every device.
+    //
+    // The full-surface form is kept for the case where the damage IS the surface — a first paint, a resize, a
+    // navigation — because the dirty-rect path has its own per-call cost and there is nothing to save there.
+    const partial = dw > 0 && dh > 0 && (dw < w || dh < h);
+    if (partial) ctx.putImageData(image, 0, 0, dx, dy, dw, dh);
+    else ctx.putImageData(image, 0, 0);
+
+    // Counted so the browser gate can assert the optimisation is actually engaged. Without this, a regression that
+    // silently blitted the whole surface every frame would look identical from the outside — correct pixels, and
+    // nothing to notice until someone profiled a phone.
+    //
+    // On `globalThis.__cupri`, the PAGE's object, not the `$cupri` this library keeps for itself. They are two
+    // different objects that both answer to "cupri" in this file, which is exactly how the first version of this
+    // wrote the counters somewhere the test could not read them.
+    const s = canvasHost.blits || (canvasHost.blits = { full: 0, partial: 0, pixels: 0, surface: 0 });
+    if (partial) s.partial++; else s.full++;
+    s.pixels += partial ? dw * dh : w * h;
+    s.surface += w * h;
+    s.last = dx + ',' + dy + ' ' + dw + 'x' + dh + ' of ' + w + 'x' + h;
   },
 
   // The device-pixel ratio actually in force, derived from the canvas rather than read from the window: it is the

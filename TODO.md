@@ -390,6 +390,29 @@ system, while this one is honest about what a clone actually gets today.
       all (measured — press and release both returned `Tick` false with zero damage rects), and anchors are
       swallowed by the host. There is nothing on the page a click visibly changes.
 
+- [~] **Damage-rect blitting: wired, and inert until the engine narrows damage under scale.** The host's rectangle
+      now reaches `putImageData`'s dirty-rectangle arguments, so only the changed part would be uploaded. It never
+      is, because CupriFace reports full-surface damage whenever the document scale is not exactly 1.
+
+      Measured on the desktop host — same document, same logical pointer position, varying only the scale:
+
+      | scale | reported damage |
+      |---|---|
+      | 1 | `(18,64) 1262x163 of 1280x432` — 38% of the surface |
+      | 2 | full surface |
+      | 0.72 | full surface |
+
+      This client is essentially never at 1: hybrid zoom fits an authored design size to the viewport, and a HiDPI
+      screen multiplies by its device pixel ratio on top. A plain 2x laptop is enough to lose it.
+
+      The plumbing stays because it is two lines, costs nothing, and is right the moment the engine changes. What
+      guards it is a **characterisation test** asserting the current behaviour — every repaint uploads the whole
+      surface — so lifting the limitation upstream fails the gate loudly rather than passing unnoticed. That is the
+      same shape a consumer used on #4 for the vessel's non-fragmentation, and it earned its keep there.
+
+      Worth an upstream question, in the same spirit as CupriFace #89: whether scaled damage is intended, hard, or
+      simply unimplemented. Not filed yet.
+
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
       drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`

@@ -23,7 +23,7 @@ namespace CupriNet.Nodestar.Client;
 internal sealed unsafe partial class CupriFaceBridge : IWebBridge
 {
     [LibraryImport("js", EntryPoint = "cupri_present")]
-    private static partial void PresentJs(IntPtr rgba, int width, int height);
+    private static partial void PresentJs(IntPtr rgba, int width, int height, int dx, int dy, int dw, int dh);
 
     [LibraryImport("js", EntryPoint = "cupri_set_cursor", StringMarshalling = StringMarshalling.Utf8)]
     private static partial void SetCursorJs(string cursor);
@@ -42,12 +42,13 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     /// arrived as 1,920,000 bytes for an 800x600 surface. So the rectangle says which part CHANGED, and a blit of
     /// the entire buffer is correct, merely wasteful.</para>
     ///
-    /// <para>It is left wasteful on purpose for now. <c>cupri_present</c> already takes a whole surface and is the
-    /// path the browser gate has always exercised; narrowing it to <c>putImageData</c>'s dirty-rectangle arguments
-    /// is a separate, measurable change, and doing it here would mean two untested things at once.</para>
+    /// <para>So the rectangle is handed straight through to <c>putImageData</c>'s dirty-rectangle arguments, which
+    /// upload only the part that changed. A hover on one link repaints a few thousand pixels rather than the whole
+    /// canvas — every frame, on every device. The page falls back to a full blit when the damage IS the surface,
+    /// which is what a first paint, a resize and a navigation all are.</para>
     /// </summary>
     public void Present(IntPtr pixels, int byteCount, int width, int height, int dx, int dy, int dw, int dh)
-        => PresentJs(pixels, width, height);
+        => PresentJs(pixels, width, height, dx, dy, dw, dh);
 
     /// <summary>
     /// The accessibility tree, as HTML for the page to mirror into a live region.

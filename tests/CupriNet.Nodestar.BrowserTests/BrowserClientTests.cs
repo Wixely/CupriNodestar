@@ -158,6 +158,55 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// What the renderer actually asks this client to repaint — which today is the whole canvas, every time.
+    ///
+    /// <para><b>A characterisation test, not a wish.</b> The client passes the host's damage rectangle straight to
+    /// <c>putImageData</c>'s dirty-rectangle arguments, so only the changed part would be uploaded. The host does
+    /// not currently give it one: damage tracking engages only when the document scale is exactly 1, and this
+    /// client is essentially never at 1 — hybrid zoom fits an authored design size to the viewport, and a HiDPI
+    /// screen multiplies by its device pixel ratio on top.</para>
+    ///
+    /// <para>Measured on the desktop host, same document and same logical pointer position, varying only the
+    /// scale: at <b>1</b> a hover reported <c>(18,64) 1262x163 of 1280x432</c>; at <b>2</b> and at <b>0.72</b> the
+    /// same hover reported the full surface. So this is a property of the engine rather than of the wiring.</para>
+    ///
+    /// <para><b>It asserts the limitation so that lifting it is loud.</b> If a future CupriFace narrows damage under
+    /// scale, this fails — and the failure is the signal that the blit can stop uploading a megabyte per hover.
+    /// Pinning it here is better than a comment because the constraint is met in this file, not in prose.</para>
+    /// </summary>
+    [Fact]
+    public async Task Every_repaint_currently_uploads_the_whole_surface()
+    {
+        _diagnosticsName = "damage-rects";
+        await ExpectLogAsync("painted");
+
+        // Counted from a clean slate, after the first paint — which is legitimately full whatever the scale.
+        await _page!.EvaluateAsync(
+            "() => { globalThis.__cupri.blits = { full: 0, partial: 0, pixels: 0, surface: 0 }; }");
+
+        var box = await ViewportAsync();
+        for (var i = 0; i < 12; i++)
+        {
+            await _page.Mouse.MoveAsync(
+                (float)(box.X + box.Width * (0.1 + 0.07 * i)),
+                (float)(box.Y + box.Height * (0.15 + 0.06 * i)));
+            await Task.Delay(40);
+        }
+
+        var stats = await _page.EvaluateAsync<System.Text.Json.JsonElement>("() => globalThis.__cupri.blits");
+        var partial = stats.GetProperty("partial").GetInt32();
+        var full = stats.GetProperty("full").GetInt32();
+
+        if (partial + full == 0) Assert.Fail(Diagnosis("nothing repainted while the pointer crossed the site"));
+
+        Assert.True(partial == 0,
+            $"{partial} of {partial + full} repaints uploaded only their damage rectangle. The engine has started "
+            + "narrowing damage under scale — remove this test, and expect the blit to get considerably cheaper.");
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
     /// Following a link inside a site — a second page, over the connection already open.
     ///
     /// <para>This client could not do it at all before: its only navigation was a link a visitor typed into the
