@@ -413,6 +413,59 @@ system, while this one is honest about what a clone actually gets today.
       Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
       every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
 
+      **Following an `<a href>` inside a site works, off the engine's own `CupriDocument.Navigated` event.** A
+      click stays on the open Pilgrimage and costs one Oracle round trip; the connection, handshake and pinned
+      Signet are untouched. `Navigated` carries every href a click resolved to, with `External` already separating
+      one a host should open in a browser from one the app should route. Fragment-only hrefs do not arrive, which
+      is right — they move within a page.
+
+      **Two wrong turns got there, and both are worth keeping.** The first: `OnClick("a", …)` never fires, because
+      the engine's link branch claims the click. The second: `IWebBridge.Navigate` fires only for the EXTERNAL
+      subset, so relative and custom-scheme links look dropped. Together those made in-site links look impossible,
+      and this was briefly written up as such and reverted.
+
+      It was then rebuilt on a hit test — `HitTest` at the release point, walking `RenderNode.Parent` to an element
+      with an `href` — which worked and was the wrong answer. `Navigated` is the intended one, needs no coordinate
+      arithmetic, and covers activations a pointer release does not.
+
+      **The finding under both mistakes is about tooling, not CupriFace.** The reflection dump used to survey the
+      API printed properties and methods, and neither FIELDS nor EVENTS. `RenderNode.Element` is a field;
+      `CupriDocument.Navigated` is an event. Each absence became a confident claim — one of them nearly an upstream
+      bug report. A survey that silently omits two member kinds is worse than no survey.
+
+      Answered upstream by [CupriFace #89](https://github.com/Wixely/CupriFace/issues/89), documented in 0.10.0 with
+      no behaviour change. **Verified on 0.8.0**, which this repository is pinned to, rather than assumed from the
+      release note: relative, absolute and custom-scheme all fire there identically, so no upgrade is needed.
+
+      Where a site may send a visitor stays one function: another page of this site, or a `cupri1…` node, and
+      nothing else.
+
+- [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
+      stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
+      drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`
+      receives what the host wants to say to the page.
+
+      **The loop is deliberately NOT surrendered.** `WebHost.Run` would own the frame pump, and this client's pump
+      is also the async pump that NativeAOT-LLVM wasm has no event loop for. So the host is ticked from the loop
+      that already existed.
+
+      **Three things measured on desktop before any of it was written**, which is the payoff of the spike's finding
+      that the host is portable managed code:
+      - Input arrives in HOST (device) pixels, not logical ones — a pointer at device (120,40) over a 2x document
+        highlighted an element occupying logical (0,0)-(80,30). Dividing by the zoom, as the old renderer had to,
+        would now apply it twice.
+      - A press and a release raise a click by themselves, exactly once. The page used to send a third, synthetic
+        click event; forwarding it as well would have activated every link twice. It is gone, and the click count
+        rides on the press.
+      - `Tick` answers false when nothing changed, so an idle page still costs no pixels.
+
+      Hybrid zoom moved into `SiteApp.Present`, with the same arithmetic as the `Zoom()` it replaces. What changes is
+      who owns it: the host scales the canvas AND divides pointer positions by one number, where before painting and
+      hit-testing were kept in step by both calling one private method — a discipline rather than a guarantee.
+
+      Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
+      every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
+
       **Following an `<a href>` inside a site works, by hit-testing rather than by anything the host offers.**
       Clicking a link stays on the open Pilgrimage and costs one Oracle round trip; the connection, the handshake
       and the pinned Signet are untouched.

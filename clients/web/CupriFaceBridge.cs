@@ -34,17 +34,6 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     [LibraryImport("js", EntryPoint = "cupri_set_key_capture")]
     private static partial void SetKeyCaptureJs(int capture);
 
-    /// <summary>Where a link the host followed is left for <see cref="BrowserNavigation"/> to pick up.</summary>
-    public string? PendingNavigation { get; private set; }
-
-    /// <summary>Takes the pending navigation, if any, and clears it.</summary>
-    public string? TakeNavigation()
-    {
-        var href = PendingNavigation;
-        PendingNavigation = null;
-        return href;
-    }
-
     /// <summary>
     /// The painted frame, blitted to the canvas.
     ///
@@ -71,18 +60,14 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     public void SetCursor(string cssCursor) => SetCursorJs(cssCursor);
 
     /// <summary>
-    /// A link the document followed.
+    /// A link the host decided belongs to a browser rather than to the app.
     ///
-    /// <para>Recorded rather than acted on, because navigation here is a Pilgrimage — fetch over the conduit, then
-    /// re-point the host at what came back — and none of that can happen inside a paint.</para>
-    ///
-    /// <para><b>Nothing collects it yet.</b> This client has never been able to follow a link inside a site: the
-    /// only navigation it has is the one a visitor types into the chrome's link bar, which arrives by an entirely
-    /// separate path (<see cref="BrowserNavigation"/>). Following an <c>&lt;a href&gt;</c> is new capability the
-    /// host makes possible rather than something being ported, so it is left unwired here and taken as its own
-    /// piece of work — a half-wired one would look like a link that does nothing.</para>
+    /// <para>Ignored, and that is the whole of it: this client has no browser to hand an external URL to and no
+    /// business opening one. It hears about EVERY link — including this one — through
+    /// <c>CupriDocument.Navigated</c>, which is the engine's own event and carries relative and custom-scheme
+    /// hrefs that never reach here at all. Acting on both would mean two paths to one decision.</para>
     /// </summary>
-    public void Navigate(string href) => PendingNavigation = href;
+    public void Navigate(string href) { }
 
     /// <summary>
     /// Whether a text field wants the keyboard, which is what decides if the page swallows key events.

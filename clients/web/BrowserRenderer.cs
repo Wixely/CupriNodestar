@@ -32,12 +32,6 @@ internal static partial class BrowserRenderer
     /// <summary>Whether a site has been shown, so input and frames have something to reach.</summary>
     private static bool _live;
 
-    /// <summary>The current site, kept so the scale it presents at can be asked for when hit-testing.</summary>
-    private static SiteApp? _app;
-
-    /// <summary>The link the pointer went down on, so a release only follows one it started on.</summary>
-    private static string? _pressedLink;
-
     /// <summary>Whether a freshly loaded document is still waiting for its first feed message before being shown.</summary>
     private static bool _awaitingFirstBind;
     private static long _bindDeadline;
@@ -63,26 +57,46 @@ internal static partial class BrowserRenderer
     /// <summary>
     /// A link the visitor followed inside the site, taken and cleared.
     ///
-    /// <para>Two sources, and the second is the one that matters. The host reports a followed link through
-    /// <c>IWebBridge.Navigate</c> — but ONLY for absolute <c>http(s)</c> URLs, which are exactly the links this
-    /// client must refuse. A relative <c>href</c>, which is what a site actually uses to link its own pages, is
-    /// swallowed: neither <c>Navigate</c> nor an <c>OnClick("a", …)</c> handler ever sees it. Both measured against
-    /// 0.9.0.</para>
+    /// <para>Reported by the document itself, through <c>CupriDocument.Navigated</c>. That is the engine's own
+    /// answer for links and it carries every href a click resolved to, with <c>External</c> already separating one
+    /// a host should open in a browser from one the app is expected to route.</para>
     ///
-    /// <para>So the relative case is recovered by hit-testing the release position and walking up to the nearest
-    /// element carrying an <c>href</c>. <c>RenderNode</c> exposes <c>Element</c> and <c>Parent</c>, which is what
-    /// makes that possible without any help from the host.</para>
+    /// <para><b>Not <c>OnClick("a", …)</c>, which never fires for an anchor</b> — the engine's link branch claims
+    /// the click first — and not <c>IWebBridge.Navigate</c>, which a host raises only for the EXTERNAL subset, so
+    /// relative and custom-scheme links appear to vanish. Both measured before this was written, and both are the
+    /// wrong end of the same event.</para>
+    ///
+    /// <para>Fragment-only hrefs (<c>#…</c>) do not arrive here at all, which is correct: they move within a page
+    /// rather than to another one.</para>
     /// </summary>
     public static string? TakeNavigation()
     {
-        if (Bridge.TakeNavigation() is { } fromHost) return fromHost;
-
         var followed = _followed;
         _followed = null;
         return followed;
     }
 
     private static string? _followed;
+
+    /// <summary>
+    /// Records a link the document resolved, for the visit loop to act on.
+    ///
+    /// <para>Recorded rather than followed here: navigating is a Pilgrimage or an Oracle consult, and neither can
+    /// happen inside a paint. <c>Program</c> decides what the href is allowed to mean.</para>
+    /// </summary>
+    private static void OnNavigated(NavigateEvent e)
+    {
+        // External is the engine's own classification of an href a host should hand to a browser. This client has
+        // no browser to hand it to and no business opening one, so it is refused here, by name, rather than
+        // travelling further as an ordinary path.
+        if (e.External)
+        {
+            Console.WriteLine($"[cupri] refused an off-network link: {e.Href}");
+            return;
+        }
+
+        _followed = e.Href;
+    }
 
     /// <summary>
     /// Points the host at a freshly fetched document.
@@ -93,10 +107,9 @@ internal static partial class BrowserRenderer
     public static void Show(string html)
     {
         var (designWidth, designHeight) = SiteManifest.DesignSize(html);
-        _app = new SiteApp(html, designWidth, designHeight, CanvasScale);
-        _pressedLink = null;
+        var app = new SiteApp(html, designWidth, designHeight, CanvasScale);
 
-        WebHostCore.Init(_app, LoadFonts, Bridge);
+        WebHostCore.Init(app, Configure, Bridge);
         _live = true;
 
         // NOT painted here, deliberately.
@@ -115,14 +128,19 @@ internal static partial class BrowserRenderer
     }
 
     /// <summary>
-    /// Registers the embedded faces on a document the host has just built.
+    /// Prepares a document the host has just built: the embedded faces, and the link hook.
     ///
     /// <para>Wasm has no system font list to fall back on, so without these text lays out and paints as nothing —
     /// which reads as a broken renderer rather than a missing asset. This is what the host's <c>configure</c>
     /// callback is for: the document exists but has not been laid out yet.</para>
     /// </summary>
-    private static void LoadFonts(CupriDocument document)
+    private static void Configure(CupriDocument document)
     {
+        // Links, from the engine's own event. Subscribed here because the document is new on every visit and every
+        // in-site navigation — a handler attached once to a document that gets replaced stops being called, which
+        // would look exactly like links working and then quietly not.
+        document.Navigated += OnNavigated;
+
         var assembly = typeof(BrowserRenderer).Assembly;
         foreach (var name in new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" })
         {
@@ -248,7 +266,6 @@ internal static partial class BrowserRenderer
     {
         if (!Ready) return;
         var (x, y) = Host(cssX, cssY);
-        _pressedLink = LinkAt(cssX, cssY);
         WebHostCore.PointerDown(x, y, clicks <= 0 ? 1 : clicks);
     }
 
@@ -257,51 +274,6 @@ internal static partial class BrowserRenderer
         if (!Ready) return;
         var (x, y) = Host(cssX, cssY);
         WebHostCore.PointerUp(x, y);
-
-        // A link is followed only when the press and the release landed on the SAME one, which is what every
-        // browser does and what lets someone change their mind by dragging off a link before letting go.
-        var released = LinkAt(cssX, cssY);
-        if (released is not null && released == _pressedLink) _followed = released;
-        _pressedLink = null;
-    }
-
-    /// <summary>
-    /// The <c>href</c> under a position in CSS pixels, or null.
-    ///
-    /// <para>Hit-testing is in LOGICAL units, which is the one place this client still has to undo the scale itself:
-    /// the host divides for its own dispatch but takes no part in this. The scale comes from the same
-    /// <c>PresentInfo</c> the host laid the page out with, asked for rather than recomputed, so a hit test cannot
-    /// drift from the paint the way two independent copies of the arithmetic would.</para>
-    ///
-    /// <para>It walks up from the hit node because a click lands on whatever is innermost — the text inside the
-    /// anchor, or an image inside it — and the <c>href</c> belongs to an ancestor.</para>
-    /// </summary>
-    private static string? LinkAt(float cssX, float cssY)
-    {
-        if (_app is null) return null;
-
-        try
-        {
-            var density = CanvasScale();
-            if (density <= 0) density = 1f;
-
-            var scale = _app.Present(CanvasWidth(), CanvasHeight()).Scale;
-            if (scale <= 0) scale = 1f;
-
-            var node = WebHostCore.Document.HitTest(cssX * density / scale, cssY * density / scale);
-            for (var walk = node; walk is not null; walk = walk.Parent)
-                if (walk.Element?.GetAttribute("href") is { Length: > 0 } href)
-                    return href;
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            // A hit test that throws must not take the pointer down with it: the click still belongs to the
-            // document, and a link that cannot be resolved is simply not a link.
-            Console.WriteLine($"[cupri] link hit test: {ex.GetType().Name}: {ex.Message}");
-            return null;
-        }
     }
 
     /// <summary>
