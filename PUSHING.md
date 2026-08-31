@@ -110,10 +110,28 @@ Two things came out of it:
 The load-bearing uploads — `browser-client`, `packages`, `constellation-*` — deliberately stay fatal. `pack` and
 `example` refuse to proceed without the client bundle, and that guard is the whole reason they wait on `browser`.
 
-**The quota itself is not this repository's to fix.** CupriNodestar holds no artifacts at all; the limit is
-account-wide and was consumed elsewhere under the Wixely account. Usage recalculates every 6–12 hours, so a run that
-fails this way may simply succeed later — which is its own trap, because it makes the failure look intermittent when
-it is really a shared resource running out.
+**The real cause was this repository being PRIVATE, and it took far too long to see.** GitHub's Actions storage and
+minutes are free and unlimited for **public** repositories; only private ones spend the account's allowance. Every
+other repository under this account is public, so their artifacts had never cost anything — CupriNodestar was the
+only one paying, and therefore the only one that could run out.
+
+The repository is public now, and that is the fix.
+
+**How the wrong answer survived so long is the part worth keeping.** The error says "account-wide", which is true and
+sends you looking across every repository. Summing the artifacts of all of them gave ~487 MB against a 0.5 GB cap —
+close enough to look like the answer, so the search stopped there. It was a coincidence: every repository in that sum
+except this one was public and contributed nothing. Acting on it meant clearing 434 MB from an unrelated repository,
+which changed nothing, and recommending a retention policy there that would have changed nothing either.
+
+Two lessons, both cheap and both skipped:
+
+- **When one repository behaves differently from its siblings, compare the repositories before compensating.**
+  Visibility was visible in the very first listing that was fetched.
+- **Arithmetic that fits is not a cause.** ~487 against 500 felt like proof and was numerology.
+
+What remains true: usage recalculates every 6–12 hours and is accrued over the billing cycle rather than measured
+live, so deleting artifacts does not refund what a cycle has already spent. That is what makes this class of failure
+look intermittent when it is a resource running out.
 
 ## What the CI cannot tell you
 

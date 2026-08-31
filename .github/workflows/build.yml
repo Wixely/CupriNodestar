@@ -221,9 +221,10 @@ jobs:
       # Diagnostics, so NEVER fatal.
       #
       # v0.1.0-alpha.5 was lost exactly here. Every job passed — 82 tests, the samples, the gate in real Chromium —
-      # and then this step hit the ACCOUNT-WIDE artifact storage quota, filled by another repository. Failing the
-      # step failed the job, which skipped `pack` and `example`, which skipped `publish` and `release`. A green
-      # build shipped nothing because a screenshot could not be uploaded.
+      # and then this step hit the artifact storage quota. That quota was this repository's to spend only because it
+      # was PRIVATE at the time — Actions storage is free and unlimited for public repositories, and it is public
+      # now. Failing the step failed the job, which skipped `pack` and `example`, which skipped `publish` and
+      # `release`. A green build shipped nothing because a screenshot could not be uploaded.
       #
       # A diagnostic that cannot be stored is worth a warning, not a lost release: nothing downstream reads this
       # artifact, and the information it carries only matters when something else has already gone wrong.
