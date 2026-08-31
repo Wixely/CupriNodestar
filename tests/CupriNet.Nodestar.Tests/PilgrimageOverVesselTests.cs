@@ -184,6 +184,35 @@ public class PilgrimageOverVesselTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Closing a visit twice is not an error.
+    ///
+    /// <para><see href="https://github.com/Wixely/CupriNodestar/issues/3">#3</see>: a second
+    /// <c>DisposeAsync</c> threw <c>ObjectDisposedException</c> out of <c>VesselMux</c>. Forwarded as
+    /// <see href="https://github.com/Wixely/CupriNet/issues/5">CupriNet#5</see> and fixed in 0.6.0 with a one-shot
+    /// guard — on five types, not the two that were reported: <c>ArcanumSession</c> had the identical one-line
+    /// body and the same defect waiting on the channel path.</para>
+    ///
+    /// <para><b>Pinned here because the contract break was never the interesting part.</b> A caller reaches this
+    /// while disposing exactly ONCE: if the site ends the session first, the Pilgrim tears down its own mux in
+    /// response, and the caller's single dispose lands on something already disposed. Whether it threw depended on
+    /// which side got there first — a race no caller can see or order around, which is why the reporter's three
+    /// passing tests were passing on timing rather than on correctness.</para>
+    ///
+    /// <para>Three disposals rather than two, because a guard that only survives the second call is a guard that
+    /// was written for this test.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_visit_can_be_closed_more_than_once()
+    {
+        using var deadline = Deadline();
+        var shrine = await VisitAsync(deadline.Token);
+
+        await shrine.DisposeAsync();
+        await shrine.DisposeAsync();
+        await shrine.DisposeAsync();
+    }
+
+    /// <summary>
     /// The regression that matters most. In #2 this threw — the peer answering was the node, so the site's own
     /// Signet did not match it. That it now succeeds is the whole fix: a site can be addressed over a raw vessel.
     /// </summary>
