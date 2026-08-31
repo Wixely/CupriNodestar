@@ -112,6 +112,13 @@ mergeInto(LibraryManager.library, {
         // Focus on press: a site with a text field is unusable if typing goes to the page instead of the canvas.
         try { c.focus({ preventScroll: true }); } catch (err) { c.focus(); }
         try { c.setPointerCapture(e.pointerId); } catch (err) { /* not fatal; drags just end at the edge */ }
+
+        // LEFT BUTTON ONLY. A press is what activates whatever is under it, so forwarding a right- or middle-click
+        // as one means a right-click presses the thing it was meant to open a menu about. CupriFace hit exactly
+        // this in both of its own web hosts and fixed it in 0.9.0 (their #85); this client hand-wrote its input
+        // layer rather than using theirs, so it had the same bug independently and does not inherit the fix.
+        if (e.button !== 0) return;
+
         // The click count rides on the press. The renderer's host raises a click from the press and the release
         // by itself, so there is no separate click event to send — sending one would activate every link twice.
         cupri.input.push({ k: 2, x: p.x, y: p.y, i0: e.detail || 1 });
@@ -120,6 +127,11 @@ mergeInto(LibraryManager.library, {
       c.addEventListener('pointerup', function (e) {
         const p = cupri.at(e); if (!p) return;
         try { c.releasePointerCapture(e.pointerId); } catch (err) { /* as above */ }
+
+        // Matched to the press above. Releasing a button whose press was never sent would leave the document
+        // holding a press it never received, which is how a stuck :active state happens.
+        if (e.button !== 0) return;
+
         cupri.input.push({ k: 3, x: p.x, y: p.y });
       });
 

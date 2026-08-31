@@ -374,6 +374,19 @@ system, while this one is honest about what a clone actually gets today.
 
 ## Upstream
 
+- [x] **A right-click no longer activates whatever it lands on.** This client's hand-written input layer forwarded
+      every `pointerdown` as a press regardless of button, so a right-click pressed the thing it was meant to open a
+      menu about. Both press and release are now filtered to the left button — the release too, or the document
+      holds a press it never received, which is how a stuck `:active` happens.
+
+      Found by reading CupriFace 0.9.0's release notes: it fixed exactly this in both of ITS web hosts. Because this
+      client wrote its own input layer rather than using theirs, it had the bug independently and inherited no fix.
+
+      **Not covered by the gate, and the reason is worth recording** so nobody assumes it was overlooked. A test
+      needs a click to have an observable effect, and on this canvas it has none: `:active` produces no repaint at
+      all (measured — press and release both returned `Tick` false with zero damage rects), and anchors are
+      swallowed by the host. There is nothing on the page a click visibly changes.
+
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
       drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`
@@ -400,10 +413,30 @@ system, while this one is honest about what a clone actually gets today.
       Gained, none of which this client had: the ARIA mirror (a canvas announces itself and nothing inside it, so
       every site was a blank page to a screen reader), damage-rect painting, and the host driving the cursor.
 
-      **Not wired: following an `<a href>` inside a site.** `IWebBridge.Navigate` records it and nothing collects it.
-      This client has never been able to do that — the only navigation it has is what a visitor types into the
-      chrome — so it is new capability rather than something ported, and a half-wired link that does nothing is
-      worse than one that is honestly absent.
+      **Following an `<a href>` inside a site is NOT POSSIBLE on CupriFace 0.8.0 or 0.9.0.** It was built, it did
+      not work, and it is reverted. Measured on the desktop host, which is where this is cheap to establish:
+
+      | clicked | result |
+      |---|---|
+      | `<a href="https://example.com/">` | `IWebBridge.Navigate` fires |
+      | `<a href="/second.html">` | nothing |
+      | `<a href="cuprinet://x">` | nothing |
+      | `OnClick("a", …)` | never fires — even for the absolute one |
+      | `OnClick("button", …)` | fires normally, so the selector mechanism works |
+
+      The host consumes anchor clicks and re-emits only absolute http(s) ones, which is the right shape for "open
+      this in a browser tab" and the wrong one for in-app routing. `HitTest` cannot rescue it either: `RenderNode`
+      exposes neither the element nor a bound model, so knowing the x,y is not enough.
+
+      CupriFace 0.9.0 closed [#85](https://github.com/Wixely/CupriFace/issues/85) — `OnContext` and `LastContext` —
+      but that is context-menu shaped and does not reach an ordinary left-click on an anchor. Worth an upstream
+      issue of its own; the evidence above is the issue.
+
+      **A caution about how this was nearly missed.** The gate test written for it passed 7/7 while proving nothing:
+      it looked for "second page" in the accessibility mirror, which was also the text of the link on the FIRST
+      page, so it matched before anything was clicked. Only a mutation run — pointing the link off-network, which
+      the client must refuse — exposed it, by passing when it could not possibly have. A marker has to be absent
+      from the page you start on.
 
 - [~] **Adopt `CupriFace.Web.NativeAot` as the client's host — spiked, and the answer is yes.** CupriFace 0.8.0
       ships the browser host as a package for the runtime this client actually uses (NativeAOT-LLVM, not Mono),
