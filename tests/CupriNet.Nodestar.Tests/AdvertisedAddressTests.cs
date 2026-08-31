@@ -14,9 +14,8 @@ namespace CupriNet.Nodestar.Tests;
 /// and the only honest test is to decode a real link and read what a client would find there.</para>
 ///
 /// <para>Both options existed before this and were wired to nothing, so an operator's configuration was inert while
-/// looking correct. What the node advertised instead was whatever its interfaces reported: inside a container that
-/// is the bridge address, which no visitor can reach, and on a host with nothing routable to report it is an empty
-/// list, which no visitor can dial at all. One option fixes both.</para>
+/// looking correct. What the node advertised instead was whatever its interfaces reported — inside a container, the
+/// bridge address, which no visitor can reach.</para>
 /// </summary>
 public class AdvertisedAddressTests : IAsyncLifetime
 {
@@ -95,9 +94,9 @@ public class AdvertisedAddressTests : IAsyncLifetime
     /// The regression this exists to prevent: an operator's address must not be able to go missing.
     ///
     /// <para>Asserted as an absence because the alternative is not assertable. What an unconfigured node advertises
-    /// is whatever its interfaces report, which is a container bridge in Docker, a LAN address on a workstation and
-    /// nothing at all on a loopback-bound host — so the only stable fact is that without configuration nothing
-    /// declares the node's address, and every visitor is at the mercy of that.</para>
+    /// is whatever its interfaces report — a container bridge in Docker, a LAN address on a workstation, loopback
+    /// here — so the only stable fact is that without configuration nothing DECLARES the node's address, and every
+    /// visitor is at the mercy of whatever it happened to find.</para>
     /// </summary>
     [Fact]
     public async Task Without_configuration_nothing_declares_the_nodes_address()
@@ -105,6 +104,42 @@ public class AdvertisedAddressTests : IAsyncLifetime
         var link = await LinkAsync(_ => { });
 
         Assert.DoesNotContain(link.Beacons, b => b.Kind == EndpointKind.Manual);
+    }
+
+    /// <summary>
+    /// With nothing declared, the node is handed <b>null</b> rather than an empty list — and the difference is the
+    /// whole of a regression that reached CI.
+    ///
+    /// <para>An empty list reads as "advertise nothing" and suppresses the node's own address discovery; null means
+    /// "no opinion" and leaves it alone. The first version returned the empty list, and on a CI machine — which has
+    /// a routable interface, unlike this one — the node stopped advertising the address it had always found, and
+    /// all five browser-gate tests failed with "this node's link carries no clearnet beacon to dial".</para>
+    ///
+    /// <para><b>This asserts the shape of the answer on purpose.</b> Every other test here reads a real link, which
+    /// is the honest way to check what a visitor gets — but it is exactly what could not catch this: on a machine
+    /// that discovers no address, suppressed discovery and absent discovery produce identical links. The only thing
+    /// that distinguishes them is what gets handed to the node, so that is what is asserted.</para>
+    /// </summary>
+    [Fact]
+    public void Declaring_nothing_leaves_the_nodes_own_discovery_alone()
+    {
+        var options = new NodestarOptions();
+
+        Assert.Null(NodestarApplication.DeclaredBeacons(options));
+    }
+
+    /// <summary>And declaring something still reaches the node, so the null above is not simply "never sets it".</summary>
+    [Fact]
+    public void Declaring_a_host_hands_the_node_exactly_one_beacon()
+    {
+        var options = new NodestarOptions { PublicHost = "203.0.113.7", PublicPort = 47654 };
+
+        var declared = NodestarApplication.DeclaredBeacons(options);
+
+        Assert.NotNull(declared);
+        var only = Assert.Single(declared!);
+        Assert.Equal("203.0.113.7", only.Host);
+        Assert.Equal(47654, only.Port);
     }
 
     /// <summary>
@@ -170,18 +205,25 @@ public class AdvertisedAddressTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// A node with WebRTC on and no address to give still starts.
+    /// A node that declares no address still finds one for itself, and a client still has something to dial.
     ///
-    /// <para>It warns, because a browser will have nothing to dial — but warning is the whole of it. Refusing to
-    /// start would break the ordinary case of a node visited from its own machine, where the gateway works and no
-    /// beacon is needed. This pins that the reporting path runs at startup without taking the node down with it.</para>
+    /// <para>This is the regression test for the CI break, expressed as an outcome rather than a shape. An earlier
+    /// version handed the node an empty beacon list, which suppressed its own discovery; the assertion here is that
+    /// something is dialable without any configuration at all, which is precisely what stopped being true.</para>
+    ///
+    /// <para>It asserts the beacon is <c>Host</c> — discovered — rather than a specific address, because what the
+    /// interfaces report differs between this machine, CI and a container. That it is discovered rather than
+    /// declared is the part that must hold everywhere.</para>
     /// </summary>
     [Fact]
-    public async Task A_node_with_nothing_to_advertise_still_starts()
+    public async Task A_node_that_declares_nothing_still_advertises_what_it_found()
     {
         var link = await LinkAsync(o => o.EnableWebRtc = true);
 
-        Assert.Null(WhatAClientWouldDial(link));
+        var dialled = WhatAClientWouldDial(link);
+
+        Assert.NotNull(dialled);
+        Assert.Equal(EndpointKind.Host, dialled!.Kind);
     }
 
     /// <summary>

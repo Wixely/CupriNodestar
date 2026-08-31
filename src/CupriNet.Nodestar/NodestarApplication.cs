@@ -124,7 +124,7 @@ public sealed class NodestarApplication : IAsyncDisposable
             // What this node tells visitors to reach it at. A link carries no address of its own — the client dials
             // the first non-onion beacon — so this is literally the dial target, and a node that cannot see its own
             // routable address has no other way to name one.
-            AdvertisedBeacons = Beacons(),
+            AdvertisedBeacons = DeclaredBeacons(_options),
             AdvertiseLocalAddresses = _options.AdvertiseLocalAddresses,
             Suite = suite,
             SecretStore = store,
@@ -389,23 +389,34 @@ public sealed class NodestarApplication : IAsyncDisposable
     }
 
     /// <summary>
-    /// The manually declared beacon, or none.
+    /// The beacons an operator declared, or <b>null</b> when they declared none.
     ///
     /// <para><c>Manual</c> rather than <c>Host</c>: the kind records where the address CAME FROM, and one an
     /// operator typed is a different claim from one an interface reported — it is the only kind that can be right
     /// when the node's own view of itself is wrong.</para>
+    ///
+    /// <para><b>Null and empty are not the same answer, and getting that wrong broke every Mode 1 visit.</b>
+    /// Returning an empty list here reads as "advertise nothing", which SUPPRESSES the node's own address
+    /// discovery; returning null means "I have no opinion", which leaves it alone. The first version returned the
+    /// empty list, and on CI — a machine with a routable interface — the node stopped advertising the address it
+    /// had always found for itself, so the browser gate failed five times over with "this node's link carries no
+    /// clearnet beacon to dial".</para>
+    ///
+    /// <para>It passed locally because this repository's development machine discovers no address either way, so
+    /// the empty list and the absent one looked identical. That is why the test below asserts the SHAPE of the
+    /// answer rather than what some machine happens to advertise.</para>
     /// </summary>
-    private IReadOnlyList<Beacon> Beacons()
+    internal static IReadOnlyList<Beacon>? DeclaredBeacons(NodestarOptions options)
     {
         var beacons = new List<Beacon>();
 
-        if (!string.IsNullOrWhiteSpace(_options.PublicHost))
-            beacons.Add(new Beacon(EndpointKind.Manual, _options.PublicHost.Trim(), _options.PublicPort ?? _options.ListenPort));
+        if (!string.IsNullOrWhiteSpace(options.PublicHost))
+            beacons.Add(new Beacon(EndpointKind.Manual, options.PublicHost.Trim(), options.PublicPort ?? options.ListenPort));
 
-        foreach (var entry in _options.AdvertisedAddresses)
+        foreach (var entry in options.AdvertisedAddresses)
             beacons.Add(ParseBeacon(entry));
 
-        return beacons;
+        return beacons.Count > 0 ? beacons : null;
     }
 
     /// <summary>

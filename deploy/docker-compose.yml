@@ -14,11 +14,14 @@
 # WHAT IS VERIFIED HERE, exactly — because "it is in the file" and "it has been run" are different claims and this
 # block is the only place that distinguishes them.
 #
-#   VERIFIED, by running a container with this configuration, on an image built from this repository's current
-#   state: the image starts, the gateway answers, the site mounts read-only and is served, /data is writable by the
-#   `app` user, all three ports publish, the healthcheck goes healthy in ~8s, and both PublicHost branches print
-#   what they should — the dial line when it is set, the warning when it is not. Done with `docker run` given these
-#   exact flags rather than through Compose, which was not installed on the machine that checked.
+#   VERIFIED, by running a container with this configuration: the image starts, the gateway answers, the site
+#   mounts read-only and is served, /data is writable by the `app` user, all three ports publish, the healthcheck
+#   goes healthy in ~8s, and a configured PublicHost reaches the startup line that names the dial target. Done with
+#   `docker run` given these exact flags rather than through Compose, which was not installed on the machine that
+#   checked.
+#
+#   Checked against an image built BEFORE the beacon fix in the commit that added this paragraph, so what an
+#   UNCONFIGURED container advertises has not been re-observed since. Expect it to name the bridge address.
 #
 #   NOT VERIFIED: Compose's own reading of this file — the profile, the anchors, and `secrets: environment:`,
 #   which needs Compose 2.23.1 or newer. A syntax error here would not have been caught. Run
@@ -83,15 +86,14 @@ services:
     container_name: nodestar
 
     environment:
-      # THE SETTING A CONTAINER MOST OFTEN NEEDS, and the one with no working default. A node advertises what its
-      # own interfaces report, which in a container is useless twice over: an earlier build was seen advertising
-      # 127.0.0.1 as its only beacon, so every visitor dialled their own loopback, and on CupriNet 0.6.2 a container
-      # advertises NOTHING at all — measured, running this image. The browser client dials the first non-onion
-      # beacon in the link and has no fallback to the origin the page came from, so with none it simply fails.
+      # THE SETTING A CONTAINER MOST OFTEN NEEDS. A node advertises what its own interfaces report, which in a
+      # container is the bridge: one was observed advertising 127.0.0.1 as its only beacon, so every visitor
+      # dialled their own loopback. The browser client dials the first non-onion beacon in the link and has no
+      # fallback to the origin the page came from, so this is the dial target and nothing else is.
       #
-      # That the wrong answer changed between versions is the argument for declaring the right one rather than
-      # hoping. Set it to the address your visitors reach: a public IP, or the DNS name in front of it. Left unset,
-      # the node says which of the two situations it is in at startup.
+      # Set it to the address your visitors reach: a public IP, or the DNS name in front of it. Left unset, the
+      # node prints at startup what it will advertise instead, so a wrong address is visible in the log rather
+      # than only in a visitor's browser.
       CUPRINET_NODESTAR_PublicHost: ${NODESTAR_PUBLIC_HOST:-}
       CUPRINET_NODESTAR_PublicPort: ${NODESTAR_OVERLAY_PORT:-47654}
 

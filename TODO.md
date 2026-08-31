@@ -43,6 +43,23 @@ system, while this one is honest about what a clone actually gets today.
       machine that checked; one `docker compose config` closes that. And the onion service, for the standing
       reason: no Tor circuit has ever been opened from this repository.
 
+- [x] **Regression: declaring no address suppressed the node's own discovery.** `AdvertisedBeacons` was handed an
+      empty list when nothing was configured, and an empty list means "advertise nothing" rather than "no opinion" —
+      so the node stopped finding its own address. Fixed by passing null instead.
+
+      **Caught by CI, not by 112 local tests, and the reason is the lesson.** This machine discovers no address
+      either way, so a suppressed discovery and an absent one produce identical links here; the test written to
+      cover the feature asserted an absence and was blind to the cause of it. On CI — a machine with a routable
+      interface — all five browser-gate tests failed with *"this node's link carries no clearnet beacon to dial"*.
+
+      The new test asserts the SHAPE of what is handed to the node (null, not empty) rather than what a link ends up
+      containing, because that is the only thing that differs between the two environments. Mutation-tested: putting
+      the empty list back fails both new tests.
+
+      **It also invalidated a measurement.** "A container advertises nothing at all on 0.6.2" was this bug, not
+      CupriNet behaviour — the original `127.0.0.1` observation was right all along, and the docs that had been
+      corrected to say otherwise are corrected back.
+
 - [x] **The image builds with no feed credential.** The Dockerfile restores from an `offline-packages/` directory
       when the build context carries one, and only falls back to the feed otherwise.
 
@@ -94,9 +111,8 @@ system, while this one is honest about what a clone actually gets today.
       dead wiring was the actual defect.
 
       Three things the tests found that guessing would not have:
-      - A node with nothing routable to report advertises **no clearnet beacon at all**, and the browser client then
-        throws with no fallback to the origin the page came from. The container's `127.0.0.1` is the loud failure
-        mode; this is the quiet one, and the same option fixes both.
+      - The browser client has **no fallback** to the origin the page came from: with no usable beacon it throws
+        rather than trying the obvious thing. So whatever the node advertises is the only dial target there is.
       - CupriNet drops reserved IPv6 before it reaches a link, `2001:db8::/32` among it. The first version of the
         IPv6 test used a documentation address, failed, and would have been read as "IPv6 beacons do not work".
       - Beacon **order** is meaning: the client dials the first non-onion beacon and never reaches the second.
