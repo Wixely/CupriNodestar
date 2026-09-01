@@ -276,6 +276,61 @@ internal static partial class BrowserRenderer
         WebHostCore.PointerUp(x, y);
     }
 
+    /// <summary>Whether the engine has been told this is a touch device, so it is said once rather than per frame.</summary>
+    private static bool _coarse;
+
+    /// <summary>
+    /// A finger, forwarded to the host's touch recogniser.
+    ///
+    /// <para><b>Not the pointer path.</b> The page drops the synthesised pointer events a touch also produces and
+    /// sends these instead, because they carry what the pointer ones lose: an identity, so more than one finger can
+    /// be followed, and a timestamp, so the recogniser can tell a flick from a slow drag. That recogniser is what
+    /// turns a swipe into a fling with momentum, and it is the whole reason this exists — a tap already worked
+    /// through the pointer path.</para>
+    ///
+    /// <para>The first touch also tells the engine the pointer is COARSE. It sizes hit targets differently for a
+    /// finger than for a mouse, and a fingertip aimed at mouse-sized targets is the difference between a site that
+    /// works on a phone and one that nearly does.</para>
+    /// </summary>
+    public static void TouchDown(int id, float cssX, float cssY, float timeMs)
+    {
+        if (!Ready) return;
+
+        if (!_coarse)
+        {
+            _coarse = true;
+            WebHostCore.SetCoarsePointer(true);
+        }
+
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.TouchDown(id, x, y, timeMs);
+    }
+
+    public static void TouchMove(int id, float cssX, float cssY, float timeMs)
+    {
+        if (!Ready) return;
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.TouchMove(id, x, y, timeMs);
+    }
+
+    public static void TouchUp(int id, float cssX, float cssY, float timeMs)
+    {
+        if (!Ready) return;
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.TouchUp(id, x, y, timeMs);
+    }
+
+    /// <summary>
+    /// A finger the browser took away — a call arriving, a gesture claimed by the system, a finger leaving the
+    /// screen edge. It carries no position because there is no longer one; what matters is that the recogniser
+    /// stops waiting for the rest of a gesture that is not coming.
+    /// </summary>
+    public static void TouchCancel(int id, float timeMs)
+    {
+        if (!Ready) return;
+        WebHostCore.TouchCancel(id, timeMs);
+    }
+
     /// <summary>
     /// Scrolling, which is what the wheel is for on a page taller than the canvas.
     ///

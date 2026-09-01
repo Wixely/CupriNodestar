@@ -303,6 +303,88 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// A tap reaches the document, through the touch path alone.
+    ///
+    /// <para><b>This can only pass if touch is wired end to end.</b> A browser sends every touch twice — once as a
+    /// real touch event and once as a synthesised pointer event — and the page now drops the synthesised half,
+    /// because forwarding both delivers each gesture to the pointer path AND the touch recogniser, which is how one
+    /// tap activates a link and then whatever the recogniser decides came next. So on a touch device the pointer
+    /// path is deliberately dead, and a tap that still works proves the touch path carried it.</para>
+    ///
+    /// <para>It taps to FOLLOW A LINK rather than to hover, because a hover has no meaning for a finger and because
+    /// arriving at the second page is unambiguous — the same marker the pointer-driven navigation test uses, which
+    /// is absent from the page the tap starts on.</para>
+    ///
+    /// <para>A context of its own, since touch is a property of the context rather than of the page, and enabling
+    /// it for the shared one would quietly change every other test here into a touch test.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_tap_reaches_the_document()
+    {
+        _diagnosticsName = "touch";
+
+        await using var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
+        {
+            HasTouch = true,
+            IsMobile = false,   // mobile emulation also forces a viewport and a UA; only the touchscreen is wanted
+        });
+
+        var page = await context.NewPageAsync();
+        var log = new List<string>();
+        var errors = new List<string>();
+        page.Console += (_, m) => { lock (log) log.Add(m.Text); };
+        page.PageError += (_, e) => { lock (errors) errors.Add(e); };
+
+        await page.GotoAsync(_node.AppUrl, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = 30_000 });
+
+        var deadline = DateTime.UtcNow + Patience;
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (log) if (log.Any(l => l.Contains("painted", StringComparison.Ordinal))) break;
+            await Task.Delay(200);
+        }
+
+        var box = await page.EvalOnSelectorAsync<System.Text.Json.JsonElement>(
+            "#viewport", "e => { const r = e.getBoundingClientRect(); return {x:r.x, y:r.y, w:r.width, h:r.height}; }");
+        var bx = box.GetProperty("x").GetDouble();
+        var by = box.GetProperty("y").GetDouble();
+        var bw = box.GetProperty("w").GetDouble();
+        var bh = box.GetProperty("h").GetDouble();
+
+        var arrived = false;
+        for (var row = 0; row < 8 && !arrived; row++)
+        {
+            for (var col = 0; col < 4 && !arrived; col++)
+            {
+                await page.Touchscreen.TapAsync(
+                    (float)(bx + bw * (col + 0.5) / 4),
+                    (float)(by + bh * (row + 0.5) / 8));
+                await Task.Delay(120);
+
+                var aria = await page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+                arrived = aria.Contains("arrived elsewhere", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        for (var i = 0; i < 30 && !arrived; i++)
+        {
+            await Task.Delay(100);
+            var aria = await page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            arrived = aria.Contains("arrived elsewhere", StringComparison.OrdinalIgnoreCase);
+        }
+
+        string tail;
+        lock (log) tail = string.Join(Environment.NewLine + "  ", log.TakeLast(12));
+
+        Assert.True(arrived,
+            "no tap reached the site's second page. Touch is the only input this context produces and the page "
+            + "drops the synthesised pointer events, so nothing arrived at the document at all." + Environment.NewLine
+            + "client log:" + Environment.NewLine + "  " + tail);
+
+        lock (errors) Assert.Empty(errors);
+    }
+
+    /// <summary>
     /// The site being readable by a screen reader.
     ///
     /// <para><b>Why this is a gate test and not a unit test.</b> A canvas announces itself and nothing inside it, so

@@ -103,11 +103,21 @@ mergeInto(LibraryManager.library, {
       if (!c.hasAttribute('tabindex')) c.tabIndex = 0;
       c.style.outline = 'none';
 
+      // A FINGER IS NOT A MOUSE, and the browser sends it as both.
+      //
+      // Every touch also arrives as a synthesised pointer event, so forwarding both would deliver each gesture
+      // twice — once to the pointer path and once to the touch recogniser, which is how a single tap activates a
+      // link and then activates whatever the recogniser decides came next. The touch path is the better one on a
+      // touch device: it carries identifiers, so it can follow more than one finger, and it feeds the recogniser
+      // that produces flings and long-presses. So touch-derived pointer events are dropped here and the real touch
+      // events below are used instead.
       c.addEventListener('pointermove', function (e) {
+        if (e.pointerType === 'touch') return;
         const p = cupri.at(e); if (p) cupri.pushMove(p.x, p.y);
       });
 
       c.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'touch') return;
         const p = cupri.at(e); if (!p) return;
         // Focus on press: a site with a text field is unusable if typing goes to the page instead of the canvas.
         try { c.focus({ preventScroll: true }); } catch (err) { c.focus(); }
@@ -125,6 +135,7 @@ mergeInto(LibraryManager.library, {
       });
 
       c.addEventListener('pointerup', function (e) {
+        if (e.pointerType === 'touch') return;
         const p = cupri.at(e); if (!p) return;
         try { c.releasePointerCapture(e.pointerId); } catch (err) { /* as above */ }
 
@@ -136,8 +147,39 @@ mergeInto(LibraryManager.library, {
       });
 
       c.addEventListener('pointercancel', function (e) {
+        if (e.pointerType === 'touch') return;
         const p = cupri.at(e); if (p) cupri.input.push({ k: 3, x: p.x, y: p.y });
       });
+
+      // TOUCH, as touch. Each changed finger becomes one record carrying its identifier, so the renderer's
+      // recogniser can follow several at once and tell a fling from a drag from a long press.
+      //
+      // passive:false because these MUST be preventable. Left alone, a swipe scrolls the page while the document
+      // sits still, and a pinch zooms the whole browser — on a phone the canvas fills the screen, so both read as
+      // the site being broken rather than as the browser doing its job.
+      const touches = function (kind) {
+        return function (e) {
+          const rect = c.getBoundingClientRect();
+          for (var i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            cupri.input.push({
+              k: kind,
+              i0: t.identifier | 0,
+              x: t.clientX - rect.left,
+              y: t.clientY - rect.top,
+              // The recogniser needs a clock to tell a flick from a slow drag. e.timeStamp is the event's own,
+              // which is closer to when the finger actually moved than reading the clock in this handler.
+              a: e.timeStamp,
+            });
+          }
+          e.preventDefault();
+        };
+      };
+
+      c.addEventListener('touchstart', touches(7), { passive: false });
+      c.addEventListener('touchmove', touches(8), { passive: false });
+      c.addEventListener('touchend', touches(9), { passive: false });
+      c.addEventListener('touchcancel', touches(10), { passive: false });
 
       // passive:false so preventDefault is honoured. Without it the wheel scrolls the PAGE while the document sits
       // still — the canvas fills the viewport, so that reads as the site ignoring the wheel entirely.

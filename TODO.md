@@ -435,6 +435,30 @@ system, while this one is honest about what a clone actually gets today.
       canvas exactly half opaque and `The_client_dials_the_node_that_served_it_and_renders_its_site` fails.
       Established by mutation, not assumed.
 
+- [~] **Stage 2 of the host adoption: touch.** A finger now reaches the document as TOUCH rather than as a
+      synthesised mouse, so the host's recogniser — flings with momentum, long-press — has the stream it needs. IME
+      and the clipboard are the remaining two thirds of this stage and are not done.
+
+      **The page now DROPS the pointer events a touch also produces**, which is the part that makes it work rather
+      than double. A browser sends every touch twice, and forwarding both delivers one gesture to the pointer path
+      and to the recogniser — a tap activates a link, and then whatever the recogniser concludes came next. Touch
+      carries what the synthesised pointer loses anyway: an identity, so several fingers can be followed, and the
+      event's own timestamp, so a flick is distinguishable from a slow drag. That timestamp is the event's, not the
+      clock read when the frame drained the queue, because the gap between them is exactly the error that would
+      make every flick look like a drag.
+
+      The first touch also tells the engine the pointer is COARSE, once rather than per frame. It sizes hit targets
+      for a fingertip rather than a mouse, which is the difference between a site that works on a phone and one
+      that nearly does.
+
+      **Gate-tested on a touch-enabled context, and the test can only pass if the whole path works** — the pointer
+      path is deliberately dead there, so a tap that still follows a link proves touch carried it. Mutation-tested:
+      not attaching the touch listeners fails it.
+
+      Not covered: multi-touch with more than one finger, fling momentum, and long-press. The plumbing carries
+      identifiers and timings for all three, but Playwright's touchscreen taps and does not drag, so none of them
+      is asserted here. That is a gap in the test, not a claim about the feature.
+
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
       drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`

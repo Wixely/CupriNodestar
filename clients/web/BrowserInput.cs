@@ -36,6 +36,14 @@ internal static unsafe partial class BrowserInput
     private const int Wheel = 5;
     private const int Key = 6;
 
+    // Touch, kept distinct from the pointer kinds because it is a different stream with different meaning: a
+    // finger has an identity (so several can be followed at once) and a time (so the renderer's recogniser can
+    // tell a flick from a drag). The page never sends both for one gesture — see the note on `pointerType` there.
+    private const int TouchDown = 7;
+    private const int TouchMove = 8;
+    private const int TouchUp = 9;
+    private const int TouchCancel = 10;
+
     /// <summary>Reused across frames: this runs at display rate, and a fresh array per frame is pure garbage.</summary>
     private static readonly byte[] Buffer = new byte[MaxInputBytes];
 
@@ -113,6 +121,14 @@ internal static unsafe partial class BrowserInput
                 case Up: BrowserRenderer.PointerUp(x, y); break;
                 case Wheel: BrowserRenderer.Wheel(x, y, a, b); break;
                 case Key: BrowserRenderer.Key(text, i0, i1); break;
+
+                // `a` carries the event's own timestamp rather than the clock read on arrival: the recogniser
+                // measures velocity with it, and the difference between when a finger moved and when this frame
+                // drained the queue is exactly the error that would make a flick look like a drag.
+                case TouchDown: BrowserRenderer.TouchDown(i0, x, y, a); break;
+                case TouchMove: BrowserRenderer.TouchMove(i0, x, y, a); break;
+                case TouchUp: BrowserRenderer.TouchUp(i0, x, y, a); break;
+                case TouchCancel: BrowserRenderer.TouchCancel(i0, a); break;
             }
 
             // The text is NUL-terminated on the wire and the whole record is padded to four bytes, which is what
