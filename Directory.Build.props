@@ -74,7 +74,7 @@
          14.11 -> 14.14 MB. No API change was needed.
 
          The two host packages are NOT adopted here yet — see TODO.md. -->
-    <CupriFaceVersion>0.8.0</CupriFaceVersion>
+    <CupriFaceVersion>0.12.0</CupriFaceVersion>
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->

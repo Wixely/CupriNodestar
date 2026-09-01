@@ -390,28 +390,36 @@ system, while this one is honest about what a clone actually gets today.
       all (measured — press and release both returned `Tick` false with zero damage rects), and anchors are
       swallowed by the host. There is nothing on the page a click visibly changes.
 
-- [~] **Damage-rect blitting: wired, and inert until the engine narrows damage under scale.** The host's rectangle
-      now reaches `putImageData`'s dirty-rectangle arguments, so only the changed part would be uploaded. It never
-      is, because CupriFace reports full-surface damage whenever the document scale is not exactly 1.
+- [x] **Damage-rect blitting, live on CupriFace 0.12.0.** The host's rectangle reaches `putImageData`'s
+      dirty-rectangle arguments, so a hover uploads a band rather than the whole canvas.
 
-      Measured on the desktop host — same document, same logical pointer position, varying only the scale:
+      **It was inert on 0.8.0 and the reason was upstream.** Damage tracking engaged only at scale exactly 1, and
+      this client is never at 1 — hybrid zoom fits an authored design to the viewport, and HiDPI multiplies on top.
+      Reported as [CupriFace #99](https://github.com/Wixely/CupriFace/issues/99) and fixed in #100. Measured on
+      0.12.0, same document and logical point, varying only scale:
 
-      | scale | reported damage |
-      |---|---|
-      | 1 | `(18,64) 1262x163 of 1280x432` — 38% of the surface |
-      | 2 | full surface |
-      | 0.72 | full surface |
+      | scale | before | now |
+      |---|---|---|
+      | 1 | `1262x164` | `1262x164` |
+      | 1.5 | full | `1253x247` |
+      | 2 | full | `1244x306` |
+      | 0.72 | full | `1268x119` |
 
-      This client is essentially never at 1: hybrid zoom fits an authored design size to the viewport, and a HiDPI
-      screen multiplies by its device pixel ratio on top. A plain 2x laptop is enough to lose it.
+      The host converts to device space itself, so nothing here needed `ScaleDamageToDevice`.
 
-      The plumbing stays because it is two lines, costs nothing, and is right the moment the engine changes. What
-      guards it is a **characterisation test** asserting the current behaviour — every repaint uploads the whole
-      surface — so lifting the limitation upstream fails the gate loudly rather than passing unnoticed. That is the
-      same shape a consumer used on #4 for the vessel's non-fragmentation, and it earned its keep there.
+      **One thing I got wrong in the report, worth keeping.** There were TWO gates with the same shape, and the one
+      I measured was the host's — `PresentInfo.Scale` short-circuits `WebHostCore.Paint`, so `RenderIncremental` was
+      never reached and the engine's own page-zoom gate I was reasoning about never came into it. Both are gone now.
 
-      Worth an upstream question, in the same spirit as CupriFace #89: whether scaled damage is intended, hard, or
-      simply unimplemented. Not filed yet.
+      **The test asserts the optimisation is ENGAGED, not that the rectangle is correct**, and the difference
+      matters: a rectangle that misses part of what changed narrows the upload just as well and leaves stale pixels.
+      Four attempts to catch that end-to-end all passed against a deliberately halved rectangle — the dirt is
+      corrected by accident when the pointer moves off, and there is no way to force a full repaint of identical
+      content to compare against (a feed message re-binds an unchanged value and correctly paints nothing).
+
+      It turned out to be covered anyway, by the test that reads as a smoke test: halving the height leaves the
+      canvas exactly half opaque and `The_client_dials_the_node_that_served_it_and_renders_its_site` fails.
+      Established by mutation, not assumed.
 
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It

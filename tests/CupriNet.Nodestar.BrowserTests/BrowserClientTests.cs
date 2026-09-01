@@ -158,50 +158,69 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
-    /// What the renderer actually asks this client to repaint — which today is the whole canvas, every time.
+    /// The page repaints incrementally rather than uploading the whole canvas every frame.
     ///
-    /// <para><b>A characterisation test, not a wish.</b> The client passes the host's damage rectangle straight to
-    /// <c>putImageData</c>'s dirty-rectangle arguments, so only the changed part would be uploaded. The host does
-    /// not currently give it one: damage tracking engages only when the document scale is exactly 1, and this
-    /// client is essentially never at 1 — hybrid zoom fits an authored design size to the viewport, and a HiDPI
-    /// screen multiplies by its device pixel ratio on top.</para>
+    /// <para><b>What this asserts, exactly:</b> that the engine hands this client a damage rectangle smaller than
+    /// the surface and that the client uses it. Nothing more. It catches the optimisation being silently switched
+    /// off — by a regression here, or by an engine change like the one that kept it off for every scale except 1
+    /// (CupriFace #99/#100) — which is otherwise invisible, because the pixels stay correct and only a phone gets
+    /// warm.</para>
     ///
-    /// <para>Measured on the desktop host, same document and same logical pointer position, varying only the
-    /// scale: at <b>1</b> a hover reported <c>(18,64) 1262x163 of 1280x432</c>; at <b>2</b> and at <b>0.72</b> the
-    /// same hover reported the full surface. So this is a property of the engine rather than of the wiring.</para>
+    /// <para><b>What it does NOT assert:</b> that the rectangle is RIGHT. A rectangle missing part of what changed
+    /// narrows the upload just as well and leaves stale pixels behind it, which is the real risk in narrowing
+    /// damage at all — and is why CupriFace declined to do it under scale until #100.</para>
     ///
-    /// <para><b>It asserts the limitation so that lifting it is loud.</b> If a future CupriFace narrows damage under
-    /// scale, this fails — and the failure is the signal that the blit can stop uploading a megabyte per hover.
-    /// Pinning it here is better than a comment because the constraint is met in this file, not in prose.</para>
-    /// </summary>
+    /// <para><b>That property IS covered, by a different test.</b> Halving the reported height leaves
+    /// <c>The_client_dials_the_node_that_served_it_and_renders_its_site</c> looking at a canvas exactly half opaque
+    /// (276,480 of 552,960) and it fails. Verified by mutation rather than assumed, and worth knowing because that
+    /// test reads as a smoke test for rendering at all; it is also the suite's guard against a wrong blit.</para>
+    ///
+    /// <para>Four attempts to assert correctness inside THIS test all passed against that same deliberate bug, and
+    /// the reasons are worth leaving here. Sampling after the sweep finds nothing: moving off the block repaints
+    /// the same band and corrects the dirt by accident. Sampling while hovering needs a full repaint of identical
+    /// content to compare against, and there is no way to force one — a feed message re-binds an unchanged value,
+    /// so the engine correctly paints nothing (42 updates arrived and produced no frame), and a viewport resize did
+    /// not produce one either. The invariant belongs upstream regardless, and is guarded there: their fix paints
+    /// incrementally into a retained bitmap and requires the result to match a fresh full render.</para>
+    ///
     [Fact]
-    public async Task Every_repaint_currently_uploads_the_whole_surface()
+    public async Task The_page_repaints_incrementally()
     {
         _diagnosticsName = "damage-rects";
         await ExpectLogAsync("painted");
 
-        // Counted from a clean slate, after the first paint — which is legitimately full whatever the scale.
         await _page!.EvaluateAsync(
             "() => { globalThis.__cupri.blits = { full: 0, partial: 0, pixels: 0, surface: 0 }; }");
 
+        // Swept rather than aimed, like every other pointer test here: where the hovering block lands in canvas
+        // pixels depends on the layout and the zoom the page was fitted at.
         var box = await ViewportAsync();
-        for (var i = 0; i < 12; i++)
+        for (var row = 0; row < 8; row++)
         {
-            await _page.Mouse.MoveAsync(
-                (float)(box.X + box.Width * (0.1 + 0.07 * i)),
-                (float)(box.Y + box.Height * (0.15 + 0.06 * i)));
-            await Task.Delay(40);
+            for (var col = 0; col < 4; col++)
+            {
+                await _page.Mouse.MoveAsync(
+                    (float)(box.X + box.Width * (col + 0.5) / 4),
+                    (float)(box.Y + box.Height * (row + 0.5) / 8));
+                await Task.Delay(45);
+            }
         }
 
         var stats = await _page.EvaluateAsync<System.Text.Json.JsonElement>("() => globalThis.__cupri.blits");
         var partial = stats.GetProperty("partial").GetInt32();
         var full = stats.GetProperty("full").GetInt32();
+        var pixels = stats.GetProperty("pixels").GetDouble();
+        var surface = stats.GetProperty("surface").GetDouble();
 
         if (partial + full == 0) Assert.Fail(Diagnosis("nothing repainted while the pointer crossed the site"));
 
-        Assert.True(partial == 0,
-            $"{partial} of {partial + full} repaints uploaded only their damage rectangle. The engine has started "
-            + "narrowing damage under scale — remove this test, and expect the blit to get considerably cheaper.");
+        if (partial == 0)
+            Assert.Fail(Diagnosis($"all {full} repaints uploaded the whole surface — either the client stopped "
+                                  + "passing the damage rectangle on, or the engine stopped narrowing it"));
+
+        Assert.True(pixels < surface * 0.75,
+            $"repaints uploaded {pixels:N0} of a possible {surface:N0} pixels ({pixels / surface:P1}) — the "
+            + "rectangle is arriving but is barely narrowing anything");
 
         Assert.Empty(_pageErrors);
     }
@@ -465,6 +484,13 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>Reads the canvas back: how much is painted, how varied, and a cheap fingerprint for change detection.</summary>
+    /// <summary>How many incremental blits the page has done, for spotting which positions actually repaint.</summary>
+    private async Task<int> PartialBlitsAsync()
+    {
+        var s = await _page!.EvaluateAsync<System.Text.Json.JsonElement>("() => globalThis.__cupri.blits");
+        return s.GetProperty("partial").GetInt32();
+    }
+
     private async Task<CanvasState> CanvasAsync()
     {
         var raw = await _page!.EvaluateAsync<string>("""
