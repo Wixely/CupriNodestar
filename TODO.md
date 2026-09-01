@@ -507,6 +507,64 @@ system, while this one is honest about what a clone actually gets today.
       three ways: a renderer that reads the selection and drops it, a page that never sends the select-all, and a
       cut that copies without removing. All three fail it.
 
+- [x] **Stage 3 of the host adoption: video, fullscreen, and the editing the browser has no part in.** Twelve
+      methods on the bridge were silently empty. They are the capabilities this client never had, and all of them
+      were reachable the whole time — measured before any of it was written, rather than read off the package.
+
+      **The engine does not decode, and that is the design rather than a gap.** It lays a video out, punches a
+      TRANSPARENT HOLE in the frame where the element shows, and paints its own controls on top; a real
+      `<video>` sits behind the canvas and shows through. So the BROWSER decodes, and a site with a video is not
+      paying for a software decoder in wasm. The canvas gives up its CSS background the moment a video exists —
+      an opaque background under the bitmap fills the hole in with grey, which is a mutation the gate now kills.
+
+      **Everything the engine needs was already public.** `WebHostCore.VideoMeta`, `VideoReady`, `VideoPlayState`,
+      `VideoTime`, `VideoEnded` and `NotifyHostFullscreen` are managed statics, so the return path is the same
+      queue-and-drain the touch stream uses rather than a new mechanism. Playback state follows the ELEMENT, not
+      the request: a browser refuses to start unmuted audio without a gesture, and that refusal arrives as a pause
+      nobody asked for. A document whose play button disagrees with its video is worse than one with no button.
+
+      **The rect is in canvas pixels and the element is laid out in CSS ones**, so the page divides by the density
+      — this canvas is sized in DEVICE pixels so a site renders at the display's real resolution. The first
+      version of that assertion said only "the element fits inside the canvas", and a mutation run proved it
+      worthless: with the division removed the doubled element still fits at this page's zoom. The gate now runs
+      that test in its own context at **2x** and compares against the rect the engine actually asked for, recorded
+      on `globalThis.__cupri` beside the blit counters.
+
+      **What a video in an L2 site can be.** Inline (`data:`) or absolute-remote. A RELATIVE `src` never opens,
+      and that is the client's limit rather than the engine's: this client fetches one document over the conduit
+      and has no sub-resource path at all, so there is nothing behind a relative URL. Measured — a missing local
+      source produces no `VideoOpen` and the engine simply retries with a fresh id. Same limitation as images,
+      and a fetch-over-the-conduit path would lift both at once.
+
+      **A right-click is the document's.** The browser's own menu is always the wrong one here: over a canvas it
+      offers "Save image as" for a picture of somebody's site, and over a field in that site it offers none of the
+      editing the document can do. `DispatchContextMenu` returns true and puts `menuitem` entries — Paste, Select
+      All — into the ARIA mirror, so the menu is real and a screen reader can read it. Asserted on the mirror
+      rather than on the return value, because the return value is always true: on bare background it claims the
+      click and adds nothing.
+
+      **Undo and redo** run over a history the engine keeps and the browser knows nothing about. Both are handled
+      on the offscreen field as well as on the canvas, because that field holds the browser's focus whenever a
+      field in the site has the document's — so the canvas handler never sees a keystroke typed into a site, which
+      is exactly when undo is wanted. Both directions are asserted: an undo that simply cleared the field would
+      pass a test that only checked the text was gone, and the redo is what separates a history from a delete.
+
+      **The bug that cost the most, and is worth not rediscovering.** An Emscripten library object is STRINGIFIED
+      into the generated JS, so a member can only be something that survives being written out as source.
+      `videos: new Map()` arrived on the other side as an empty object and failed at the first `.set` — which took
+      the whole document build down, silently, with the page reporting only that the site had answered 200 and
+      then nothing at all. It is built in `init` now. The gate's failure messages print page errors alongside the
+      client log for the same reason: a failure that stops a test early never reaches the assertion at the end
+      that would have shown it.
+
+      **`SetFavicon` stays empty, and deliberately.** The tab belongs to the CLIENT, not to the site being
+      visited; a visited site changing the browser tab's icon is a spoofing surface, and the argument that keeps
+      the status line off-limits to a site keeps this one closed rather than pending.
+
+      Not covered: seeking, volume and loop are carried but never driven — the engine's controls reach them and
+      the gate does not press them. Fullscreen is wired both ways and unasserted, because Playwright cannot grant
+      the gesture a `requestFullscreen` needs. That is a gap in the tests, not a claim about the feature.
+
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
       drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`

@@ -385,6 +385,84 @@ internal static partial class BrowserRenderer
     }
 
     /// <summary>
+    /// A right-click, which the document answers with a menu of its own.
+    ///
+    /// <para>Measured: on a text field this returns true and the ARIA mirror gains <c>menuitem</c> entries — Paste,
+    /// Select All — so the menu is real and a screen reader can read it. On bare background it also returns true
+    /// and adds nothing, which is why the page swallows the browser's menu unconditionally rather than waiting to
+    /// hear whether this claimed it: the answer is always yes, and it arrives a frame too late to act on anyway.</para>
+    /// </summary>
+    public static void ContextMenu(float x, float y)
+    {
+        if (!Ready) return;
+        if (WebHostCore.Document.DispatchContextMenu(x, y)) WebHostCore.MarkDirty();
+    }
+
+    /// <summary>Undo, over a history the engine keeps and the browser knows nothing about.</summary>
+    public static void Undo()
+    {
+        if (!Ready) return;
+        if (WebHostCore.Document.Undo()) WebHostCore.MarkDirty();
+    }
+
+    /// <summary>Redo. Reached by Ctrl+Y and by Ctrl+Shift+Z, because both spellings are in use.</summary>
+    public static void Redo()
+    {
+        if (!Ready) return;
+        if (WebHostCore.Document.Redo()) WebHostCore.MarkDirty();
+    }
+
+    // ---- What the browser's decoder reports back ---------------------------------------------------------------
+    //
+    // The only inbound path here that is not the visitor. A video is decoded by the BROWSER — the engine lays it
+    // out, punches a transparent hole, and paints controls over the top — so the truth about duration, readiness,
+    // playback and position lives in an element on the page, and these carry it to the engine. The document's
+    // controls are drawn from what arrives here rather than from what was asked for, which is the difference
+    // between a play button that reflects the video and one that reflects our hopes: a browser refuses to start
+    // unmuted audio without a gesture, and that refusal arrives as a pause nobody requested.
+
+    /// <summary>Duration and intrinsic size, once the browser has read the container's header.</summary>
+    public static void VideoMeta(int id, float duration, int width, int height)
+    {
+        if (Ready) WebHostCore.VideoMeta(id, duration, width, height);
+    }
+
+    /// <summary>Enough has been decoded to show a frame.</summary>
+    public static void VideoReady(int id)
+    {
+        if (Ready) WebHostCore.VideoReady(id);
+    }
+
+    /// <summary>Playing or paused, as the ELEMENT reports it — including a pause the browser decided on alone.</summary>
+    public static void VideoPlayState(int id, bool playing)
+    {
+        if (Ready) WebHostCore.VideoPlayState(id, playing);
+    }
+
+    /// <summary>The playhead. Drives the seek bar the document paints.</summary>
+    public static void VideoTime(int id, float seconds)
+    {
+        if (Ready) WebHostCore.VideoTime(id, seconds);
+    }
+
+    /// <summary>Playback reached the end.</summary>
+    public static void VideoEnded(int id)
+    {
+        if (Ready) WebHostCore.VideoEnded(id);
+    }
+
+    /// <summary>
+    /// Fullscreen changed, told rather than asked.
+    ///
+    /// <para>The browser ends fullscreen on its own — its Escape is handled before any page sees the key — so
+    /// without this the engine goes on believing a video still fills the screen and lays it out that way.</para>
+    /// </summary>
+    public static void HostFullscreen(bool active)
+    {
+        if (Ready) WebHostCore.NotifyHostFullscreen(active);
+    }
+
+    /// <summary>
     /// Copies the document's selection to the system clipboard.
     ///
     /// <para><b>The client does this, not the engine.</b> Measured: <c>KeyChord("c", Ctrl)</c> answers false and

@@ -92,9 +92,30 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                          reconnect to the first. -->
                     <meta name="cupri-feed" content="gate">
                     <meta name="cupri-design" content="800x600">
-                    <style>body { font:16px sans-serif; } h1 { color:#204; }</style>
+                    <style>
+                      body { font:16px sans-serif; }
+                      h1 { color:#204; }
+                      /* The video lives on THIS page rather than the first one because the first is already full:
+                         it declares an 800x600 design box, its content reaches the bottom of it, and the comments
+                         there record that anything past the box is off-canvas and cannot be found by a sweep.
+                         Adding a video would have pushed a target out of reach or shrunk every one of them.
+
+                         It earns its place here anyway — reaching this page means a navigation, so the video is
+                         opened on a document the engine built AFTER the client re-Inited, which is the case a
+                         video that only ever worked on the first page would hide. */
+                      cupri-video { display:block; width:320px; height:180px; margin-top:16px; }
+                    </style>
                     </head><body>
                       <h1>arrived elsewhere</h1>
+                      <!-- Inline, as a data: URI, because THE CLIENT CANNOT FETCH A SUB-RESOURCE AT ALL: it
+                           receives one document over the conduit and nothing else, so a relative src resolves to
+                           nothing and never opens. Measured — a missing local source produces no VideoOpen and
+                           the engine simply retries with a fresh id. Inline and absolute-remote are the two forms
+                           that work, and only inline is self-contained enough to gate on.
+
+                           Two seconds of flat red at 64x48, which is the smallest thing ffmpeg would produce that
+                           a browser will still decode. Nothing about the test depends on what it shows. -->
+                      <cupri-video controls muted src="data:video/webm;base64,GkXfowEAAAAAAAAfQoaBAUL3gQFC8oEEQvOBCEKChHdlYm1Ch4ECQoWBAhhTgGcBAAAAAAAEaxFNm3RAO027i1OrhBVJqWZTrIHlTbuMU6uEFlSua1OsggEjTbuMU6uEElTDZ1OsggFqTbuMU6uEHFO7a1OsggRO7AEAAAAAAACbAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmAQAAAAAAADIq17GDD0JATYCNTGF2ZjU4LjE3LjEwMVdBjUxhdmY1OC4xNy4xMDFEiYhAn0AAAAAAABZUrmsBAAAAAAAAO64BAAAAAAAAMteBAXPFgQGcgQAitZyDdW5khoVWX1ZQOIOBASPjg4QF9eEA4AEAAAAAAAAGsIFAuoEwElTDZwEAAAAAAAC/c3MBAAAAAAAALmPAAQAAAAAAAABnyAEAAAAAAAAaRaOHRU5DT0RFUkSHjUxhdmY1OC4xNy4xMDFzcwEAAAAAAAA5Y8ABAAAAAAAABGPFgQFnyAEAAAAAAAAhRaOHRU5DT0RFUkSHlExhdmM1OC4yMS4xMDQgbGlidnB4c3MBAAAAAAAAOmPAAQAAAAAAAARjxYEBZ8gBAAAAAAAAIkWjiERVUkFUSU9ORIeUMDA6MDA6MDIuMDAwMDAwMDAwAAAfQ7Z1AQAAAAAAAg3ngQCjwoEAAICQAwCdASpAADAAAEcIhYWIhYSIAgICdaoD+AP6Agc7eeLPMx5eAP79bvP/45k3MMT/jm3/8WE8DijI//FRAKOWgQBkANEBAAEQEAAYABhYL/QACIwAAKOWgQDIANEBAAEQEAAYABhYL/QACIwAAKOWgQEsANEBAAEQEAAYABhYL/QACIwAAKOWgQGQANEBAAEQEAAYABhYL/QACIwAAKOWgQH0ANEBAAEQEAAYABhYL/QACIwAAKOWgQJYANEBAAEQEAAYABhYL/QACIwAAKOVgQK8ALEBAAEQEBRgAGFgv9AAIjAAo5aBAyAA0QEAARAQABgAGFgv9AAIjAAAo5aBA4QA0QEAARAQABgAGFgv9AAIjAAAo5aBA+gA0QEAARAQABgAGFgv9AAIjAAAo5aBBEwA0QEAARAQABgAGFgv9AAIjAAAo5aBBLAA0QEAARAQABgAGFgv9AAIjAAAo5aBBRQA0QEAARAQABgAGFgv9AAIjAAAo5aBBXgA0QEAARAQABgAGFgv9AAIjAAAo5aBBdwA0QEAARAQABgAGFgv9AAIjAAAo5aBBkAA0QEAARAQABgAGFgv9AAIjAAAo5aBBqQA0QEAARAQABgAGFgv9AAIjAAAo5WBBwgAsQEAARAQFGAAYWC/0AAiMACjloEHbADRAQABEBAAGAAYWC/0AAiMAAAcU7trAQAAAAAAABG7j7OBALeK94EB8YICNfCBAw=="></cupri-video>
                     </body></html>
                     """),
                 "text/html; charset=utf-8")

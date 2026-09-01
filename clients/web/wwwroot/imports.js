@@ -112,6 +112,14 @@ mergeInto(LibraryManager.library, {
           return;
         }
 
+        // Undo and redo reach the document from here too. This field has focus whenever a field in the site does,
+        // so the canvas handler never sees these — and typing is exactly when they are wanted.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          const k = e.key.toLowerCase();
+          if (k === 'z' && !e.shiftKey) { cupri.input.push({ k: 17 }); e.preventDefault(); return; }
+          if (k === 'y' || (k === 'z' && e.shiftKey)) { cupri.input.push({ k: 18 }); e.preventDefault(); return; }
+        }
+
         const edit = cupri.editKey(e.key);
         if (!edit) return;           // printable text comes through `input` instead, already composed
         cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: (e.shiftKey ? 1 : 0) | ((e.ctrlKey || e.metaKey) ? 2 : 0), t: '' });
@@ -119,6 +127,56 @@ mergeInto(LibraryManager.library, {
       });
 
       return f;
+    },
+
+    // ---- The video underlay ------------------------------------------------------------------------------
+    //
+    // The BROWSER decodes; the document does not. The engine lays a video out, punches a TRANSPARENT HOLE in the
+    // frame where the element shows, and paints its own controls on top; a real <video> sits behind the canvas and
+    // shows through the hole. That is the whole trick, and it is why the canvas loses its CSS background the
+    // moment a video exists — an opaque background under the bitmap would fill the hole in with grey.
+    //
+    // Nothing here decodes, seeks or scales: those are the browser's, driven by the engine's own controls through
+    // the imports below. What this side owns is one element per video and the events that come back.
+    //
+    // BUILT IN `init`, NOT HERE. An Emscripten library object is stringified into the generated JS, so a member
+    // can only be something that survives being written out as source — a literal. `new Map()` is a constructed
+    // value and arrives on the other side as an empty object, which fails at the first `.set` with "not a
+    // function" and takes the whole document build down with it.
+    videos: null,
+
+    videoOpen: function (id, src) {
+      const canvas = cupri.canvasEl();
+      if (!canvas) return null;
+
+      // Once, and only once there is something to show: a canvas that never carries a video keeps the background
+      // the page gave it, which is what covers the gap before the first frame is painted.
+      canvas.style.position = 'relative';
+      canvas.style.zIndex = '1';
+      canvas.style.background = 'transparent';
+
+      const v = document.createElement('video');
+      v.src = src;
+      v.playsInline = true;      // iOS otherwise hijacks playback into its own fullscreen player
+      v.preload = 'auto';
+      // pointer-events:none because the CANVAS is the input surface. The controls the visitor sees are painted by
+      // the document; letting the element take clicks would put the browser's own controls in front of them.
+      v.style.cssText = 'position:absolute; z-index:0; pointer-events:none; display:none;';
+
+      // The browser's truth about playback, not ours. An autoplay rejection pauses without anyone asking, and a
+      // document whose play button disagrees with the video is worse than one with no button at all.
+      v.addEventListener('loadedmetadata', function () {
+        cupri.input.push({ k: 20, i0: id, x: v.duration || 0, a: v.videoWidth || 0, b: v.videoHeight || 0 });
+      });
+      v.addEventListener('loadeddata', function () { cupri.input.push({ k: 21, i0: id }); });
+      v.addEventListener('play', function () { cupri.input.push({ k: 22, i0: id, i1: 1 }); });
+      v.addEventListener('pause', function () { cupri.input.push({ k: 22, i0: id, i1: 0 }); });
+      v.addEventListener('timeupdate', function () { cupri.input.push({ k: 23, i0: id, x: v.currentTime || 0 }); });
+      v.addEventListener('ended', function () { cupri.input.push({ k: 24, i0: id }); });
+
+      canvas.parentNode.insertBefore(v, canvas);
+      cupri.videos.set(id, v);
+      return v;
     },
 
     // Whether the DOCUMENT wants keys, reported by the managed side from the engine's own focus state.
@@ -133,9 +191,11 @@ mergeInto(LibraryManager.library, {
     // changes, and until then the browser keeps its own behaviour.
     keyCapture: false,
 
-    // Called once by $cupri__postset when the module initialises. Nothing to set up here — the state above is the
-    // whole of it, and the input listeners attach lazily because the canvas may not exist yet.
-    init: function () {},
+    // Called once by $cupri__postset when the module initialises. The input listeners still attach lazily, because
+    // the canvas may not exist yet; what belongs here is anything that cannot be written as a literal above.
+    init: function () {
+      cupri.videos = new Map();
+    },
 
     // Pointer moves COALESCE. A mouse dragged across the canvas produces a move per screen refresh and often more;
     // every one of them would otherwise cost a hit test and a full document repaint to reach the same hover state
@@ -282,6 +342,22 @@ mergeInto(LibraryManager.library, {
         e.preventDefault();
       }, { passive: false });
 
+      // A RIGHT-CLICK IS THE DOCUMENT'S, and the browser's own menu is always wrong here. Over a canvas it offers
+      // "Save image as" for a picture of somebody's site, and nothing else useful; over a field in that site it
+      // offers none of the editing the document itself can do. The engine paints its own — measured, a right-click
+      // on a text field puts Paste and Select All into the ARIA mirror — so this one is swallowed.
+      // The browser can leave fullscreen on its own — its Escape is handled before any page sees it — so the
+      // engine is told rather than left believing a video is still filling the screen.
+      document.addEventListener('fullscreenchange', function () {
+        cupri.input.push({ k: 19, i0: document.fullscreenElement ? 1 : 0 });
+      });
+
+      c.addEventListener('contextmenu', function (e) {
+        const p = cupri.at(e); if (!p) return;
+        cupri.input.push({ k: 16, x: p.x, y: p.y });
+        e.preventDefault();
+      });
+
       c.addEventListener('keydown', function (e) {
         var mods = (e.shiftKey ? 1 : 0) | ((e.ctrlKey || e.metaKey) ? 2 : 0);
         var edit = cupri.editKey(e.key);
@@ -289,6 +365,14 @@ mergeInto(LibraryManager.library, {
 
         // Ctrl+A is select-all inside the document rather than in the page around it.
         if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) { edit = 14; text = ''; }
+
+        // Undo and redo, which the engine keeps a history for and the browser knows nothing about. Both spellings
+        // of redo are accepted because both are in use — Ctrl+Y on Windows, Ctrl+Shift+Z everywhere else.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          const k = e.key.toLowerCase();
+          if (k === 'z' && !e.shiftKey) { cupri.input.push({ k: 17 }); e.preventDefault(); return; }
+          if (k === 'y' || (k === 'z' && e.shiftKey)) { cupri.input.push({ k: 18 }); e.preventDefault(); return; }
+        }
 
         if (!edit && !text) return;   // a key the document has no meaning for: leave it to the browser
         cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: mods, t: text });
@@ -779,6 +863,126 @@ mergeInto(LibraryManager.library, {
 
   // Copies the next inbound message into the supplied buffer. Returns its length, 0 when the inbox is empty, or -1
   // if the buffer is too small (the message is kept, so a bigger buffer can retry rather than lose it).
+  // ---- The video underlay: transport only ------------------------------------------------------------------
+  //
+  // Everything below moves a call from the engine to one <video> element. The engine owns what plays, when and
+  // where; this side owns nothing but the element, which is the arrangement that lets the BROWSER decode. A site
+  // with a video is therefore not paying for a software decoder in wasm.
+
+  cupri_video_open__deps: ['$cupri'],
+  cupri_video_open: function (id, ptr) {
+    cupri.videoOpen(id, UTF8ToString(ptr));
+  },
+
+  // A source the engine already holds the bytes of — an inline data: URI, or a file it read. Handed over as a
+  // Blob rather than re-encoded into a URL, and the URL is revoked on close so a long visit does not leak one
+  // per video.
+  cupri_video_open_bytes__deps: ['$cupri'],
+  cupri_video_open_bytes: function (id, ptr, len) {
+    const bytes = HEAPU8.slice(ptr, ptr + len);
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'video/webm' }));
+    const v = cupri.videoOpen(id, url);
+    if (v) v.dataset.blobUrl = url; else URL.revokeObjectURL(url);
+  },
+
+  cupri_video_close__deps: ['$cupri'],
+  cupri_video_close: function (id) {
+    const v = cupri.videos.get(id);
+    if (!v) return;
+    v.pause();
+    v.remove();
+    cupri.videos.delete(id);
+    if (v.dataset.blobUrl) URL.revokeObjectURL(v.dataset.blobUrl);
+  },
+
+  // A rejected play() is expected rather than exceptional: a browser refuses to start unmuted audio without a
+  // gesture. Nothing is done with it because the `pause` event that follows already tells the engine, and its
+  // controls follow the browser rather than our optimism.
+  cupri_video_play__deps: ['$cupri'],
+  cupri_video_play: function (id) {
+    const v = cupri.videos.get(id);
+    if (v) { const p = v.play(); if (p && p.catch) p.catch(function () { }); }
+  },
+
+  cupri_video_pause__deps: ['$cupri'],
+  cupri_video_pause: function (id) { const v = cupri.videos.get(id); if (v) v.pause(); },
+
+  cupri_video_muted__deps: ['$cupri'],
+  cupri_video_muted: function (id, muted) { const v = cupri.videos.get(id); if (v) v.muted = !!muted; },
+
+  cupri_video_volume__deps: ['$cupri'],
+  cupri_video_volume: function (id, volume) { const v = cupri.videos.get(id); if (v) v.volume = volume; },
+
+  cupri_video_loop__deps: ['$cupri'],
+  cupri_video_loop: function (id, loop) { const v = cupri.videos.get(id); if (v) v.loop = !!loop; },
+
+  cupri_video_seek__deps: ['$cupri'],
+  cupri_video_seek: function (id, seconds) { const v = cupri.videos.get(id); if (v) v.currentTime = seconds; },
+
+  // Where the hole is, in the page's own coordinates.
+  //
+  // THE DIVISION BY DENSITY IS LOAD-BEARING. Everything the engine says is in canvas pixels, and this canvas is
+  // sized in DEVICE pixels so the site renders at the display's real resolution — so on any screen with a scale
+  // factor the rect is larger than the box it belongs in, by exactly that factor. It is the same conversion the
+  // input path does in the other direction.
+  //
+  // clip-path rather than overflow, because the element is not inside whatever the engine scrolled: a video half
+  // out of a scrolling panel would otherwise hang over the rest of the page. A transform on the chain moved the
+  // painted hole, so it is mirrored here — the alternative is a video that slides out from under its own frame.
+  cupri_video_rect__deps: ['$cupri'],
+  cupri_video_rect: function (id, x, y, w, h, cT, cR, cB, cL, visible, fitPtr, a, b, c, d, e, f) {
+    const v = cupri.videos.get(id);
+    if (!v) return;
+    if (!visible) { v.style.display = 'none'; return; }
+
+    const canvas = cupri.canvasEl();
+    if (!canvas) return;
+    const box = canvas.getBoundingClientRect();
+    const density = (canvas.clientWidth ? canvas.width / canvas.clientWidth : 1) || 1;
+
+    // What the ENGINE asked for, in its own pixels, kept where a test can read it — the same arrangement the
+    // blit counters use and for the same reason. Without it the conversion below can only be checked against a
+    // guess at the layout, and a client that never divided by the density passes that as long as the doubled
+    // element still fits on the canvas, which at most zooms it does.
+    const host = globalThis.__cupri;
+    if (host) host.lastVideoRect = { id: id, x: x, y: y, w: w, h: h, density: density };
+
+    v.style.display = '';
+    v.style.left = (box.left + window.scrollX + x / density) + 'px';
+    v.style.top = (box.top + window.scrollY + y / density) + 'px';
+    v.style.width = (w / density) + 'px';
+    v.style.height = (h / density) + 'px';
+    v.style.objectFit = UTF8ToString(fitPtr) || 'contain';
+    v.style.clipPath = (cT || cR || cB || cL)
+      ? 'inset(' + (cT / density) + 'px ' + (cR / density) + 'px ' + (cB / density) + 'px ' + (cL / density) + 'px)'
+      : '';
+
+    const identity = a === 1 && b === 0 && c === 0 && d === 1 && e === 0 && f === 0;
+    v.style.transformOrigin = '0 0';
+    v.style.transform = identity ? '' : 'matrix(' + a + ',' + b + ',' + c + ',' + d + ','
+                                      + (e / density) + ',' + (f / density) + ')';
+  },
+
+  // Fullscreen, on the canvas's CONTAINER rather than the canvas: the videos are siblings of the canvas, so
+  // fullscreening the canvas alone would take the document's frame and leave every video behind it on the page.
+  // 0 toggles, 1 enters, 2 leaves.
+  cupri_window_command__deps: ['$cupri'],
+  cupri_window_command: function (command) {
+    const canvas = cupri.canvasEl();
+    if (!canvas) return;
+    const target = canvas.parentElement || document.documentElement;
+    const inside = !!document.fullscreenElement;
+
+    if (command === 2 || (command === 0 && inside)) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    if ((command === 1 || command === 0) && target.requestFullscreen) {
+      const p = target.requestFullscreen();
+      if (p && p.catch) p.catch(function (err) { console.log('[cupri] fullscreen refused: ' + err); });
+    }
+  },
+
   cupri_recv__deps: ['$cupri'],
   cupri_recv: function (ptr, cap) {
     if (cupri.inbox.length === 0) return 0;

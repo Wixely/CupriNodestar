@@ -43,6 +43,41 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     [LibraryImport("js", EntryPoint = "cupri_clipboard_paste")]
     private static partial void ClipboardPasteJs();
 
+    [LibraryImport("js", EntryPoint = "cupri_video_open", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial void VideoOpenJs(int id, string src);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_open_bytes")]
+    private static partial void VideoOpenBytesJs(int id, IntPtr bytes, int length);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_close")]
+    private static partial void VideoCloseJs(int id);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_play")]
+    private static partial void VideoPlayJs(int id);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_pause")]
+    private static partial void VideoPauseJs(int id);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_muted")]
+    private static partial void VideoMutedJs(int id, int muted);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_volume")]
+    private static partial void VideoVolumeJs(int id, double volume);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_loop")]
+    private static partial void VideoLoopJs(int id, int loop);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_seek")]
+    private static partial void VideoSeekJs(int id, double seconds);
+
+    [LibraryImport("js", EntryPoint = "cupri_video_rect", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial void VideoRectJs(int id, double x, double y, double width, double height,
+        double clipTop, double clipRight, double clipBottom, double clipLeft, int visible, string fit,
+        double a, double b, double c, double d, double e, double f);
+
+    [LibraryImport("js", EntryPoint = "cupri_window_command")]
+    private static partial void WindowCommandJs(int command);
+
     /// <summary>
     /// The painted frame, blitted to the canvas.
     ///
@@ -110,24 +145,58 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     /// </summary>
     public void ClipboardPaste() => ClipboardPasteJs();
 
-    // ---- Not wired yet, and silent on purpose --------------------------------------------------------------
+    // ---- The video underlay ----------------------------------------------------------------------------------
     //
-    // Every one of these is a capability this client did not have before the host arrived, so leaving them empty
-    // loses nothing that worked. They are listed rather than thrown from: a document that opens a video must not
-    // take the page down because the client has no video surface for it.
+    // The BROWSER decodes. The engine lays a video out, punches a transparent hole in the frame where it shows,
+    // and paints its own controls on top; a real <video> sits behind the canvas and shows through. So none of
+    // these methods touch a pixel — they move one call to one element, and the element does the work.
+    //
+    // The alternative would be a software decoder in wasm, paying for in CPU what every browser already ships.
 
-    public void SetFavicon(string dataUri) { }
-    public void VideoClose(int id) { }
-    public void VideoLoop(int id, bool loop) { }
-    public void VideoMuted(int id, bool muted) { }
-    public void VideoOpen(int id, string src) { }
-    public void VideoOpenBytes(int id, byte[] bytes) { }
-    public void VideoPause(int id) { }
-    public void VideoPlay(int id) { }
+    /// <summary>A source the browser can fetch itself — an absolute http(s) URL.</summary>
+    public void VideoOpen(int id, string src) => VideoOpenJs(id, src);
+
+    /// <summary>
+    /// A source the engine already holds the bytes of: an inline <c>data:</c> URI, or a file it read.
+    ///
+    /// <para>Which is the case that matters for an L2 site, because <b>this client has no way to fetch a
+    /// sub-resource at all</b> — it receives one document over the conduit and nothing else, so a relative
+    /// <c>src</c> resolves to nothing and never opens. Inline and absolute-remote are the two that work, and that
+    /// limit belongs to the client rather than to the engine.</para>
+    /// </summary>
+    public void VideoOpenBytes(int id, byte[] bytes)
+    {
+        fixed (byte* pointer = bytes)
+            VideoOpenBytesJs(id, (IntPtr)pointer, bytes.Length);
+    }
+
+    public void VideoClose(int id) => VideoCloseJs(id);
+    public void VideoPlay(int id) => VideoPlayJs(id);
+    public void VideoPause(int id) => VideoPauseJs(id);
+    public void VideoMuted(int id, bool muted) => VideoMutedJs(id, muted ? 1 : 0);
+    public void VideoVolume(int id, double volume) => VideoVolumeJs(id, volume);
+    public void VideoLoop(int id, bool loop) => VideoLoopJs(id, loop ? 1 : 0);
+    public void VideoSeek(int id, double seconds) => VideoSeekJs(id, seconds);
+
+    /// <summary>
+    /// Where the hole is, in canvas pixels — which the page converts, because this canvas is sized in DEVICE
+    /// pixels and the element it positions is laid out in CSS ones.
+    /// </summary>
     public void VideoRect(int id, double x, double y, double w, double h, double clipTop, double clipRight,
         double clipBottom, double clipLeft, bool visible, string fit,
-        double a, double b, double c, double d, double e, double f) { }
-    public void VideoSeek(int id, double seconds) { }
-    public void VideoVolume(int id, double volume) { }
-    public void WindowCommand(int command) { }
+        double a, double b, double c, double d, double e, double f)
+        => VideoRectJs(id, x, y, w, h, clipTop, clipRight, clipBottom, clipLeft, visible ? 1 : 0, fit,
+            a, b, c, d, e, f);
+
+    /// <summary>Fullscreen, on the canvas's container so the underlaid videos come with it. 0 toggles, 1 enters, 2 leaves.</summary>
+    public void WindowCommand(int command) => WindowCommandJs(command);
+
+    // ---- Not wired yet, and silent on purpose --------------------------------------------------------------
+    //
+    // Listed rather than thrown from: a document that sets a favicon must not take the page down because this
+    // client has nowhere to put one. The page's tab belongs to the CLIENT, not to the site being visited — a
+    // visited site changing the browser tab's icon is a spoofing surface, and the same argument that keeps the
+    // status line off-limits to a site keeps this one empty deliberately rather than pending.
+
+    public void SetFavicon(string dataUri) { }
 }

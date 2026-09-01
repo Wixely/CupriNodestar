@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Playwright;
 using Xunit;
 
@@ -289,6 +290,22 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
         Assert.Empty(_pageErrors);
     }
 
+    /// <summary>
+    /// The same, on a page this test made itself. Split out rather than parameterising the shared helper's field,
+    /// because a test that quietly re-points <c>_page</c> breaks every other test in the class when it fails
+    /// halfway.
+    /// </summary>
+    private static async Task<bool> ArrivedOnAsync(IPage page, int polls)
+    {
+        for (var i = 0; i < polls; i++)
+        {
+            await Task.Delay(100);
+            var aria = await page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            if (aria.Contains("arrived elsewhere", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     /// <summary>Whether the second page's marker has reached the accessibility mirror yet.</summary>
     private async Task<bool> ArrivedAsync(int polls)
     {
@@ -492,6 +509,315 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
                 + midComposition + Environment.NewLine + "after commit: " + committed));
 
         Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// A video in a site, decoded by the browser and underlaid beneath the document.
+    ///
+    /// <para><b>The engine does not decode.</b> It lays the video out, punches a TRANSPARENT HOLE in the frame
+    /// where the element shows, and paints its own controls on top; a real <c>&lt;video&gt;</c> sits behind the
+    /// canvas and shows through. So the assertion is that such an element exists, that it is positioned where the
+    /// engine said the hole is, and that it decoded something — a client that created the element and left it at
+    /// the origin produces a video somewhere else on the screen from the frame it belongs in.</para>
+    ///
+    /// <para><b>The conversion is the part most likely to be wrong.</b> This canvas is sized in DEVICE pixels so a
+    /// site renders at the display's real resolution, and everything the engine says is in canvas pixels — so on
+    /// any screen with a scale factor the rect is larger than the box it belongs in by exactly that factor. The
+    /// element's width is compared against the canvas's own CSS box for that reason.</para>
+    ///
+    /// <para>The video lives on the SECOND page, so reaching it means a navigation and the document it opens on
+    /// was built after the client re-Inited the host. The first page had no room: it declares an 800x600 design
+    /// box that its content already fills.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_video_in_the_site_is_underlaid_and_decoded()
+    {
+        _diagnosticsName = "video";
+
+        // ITS OWN CONTEXT, AT 2x. The shared one runs at a device pixel ratio of 1, where the conversion this test
+        // exists to check is the identity — a client that never divided by the density passed it just as well, and
+        // a mutation run proved that by surviving. At 2x an unconverted rect is twice the size it should be.
+        await using var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
+        {
+            DeviceScaleFactor = 2,
+        });
+
+        var page = await context.NewPageAsync();
+        page.Console += (_, m) => { lock (_log) _log.Add(m.Text); };
+        page.PageError += (_, e) => { lock (_pageErrors) _pageErrors.Add(e); };
+        await page.GotoAsync(_node.AppUrl, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = 30_000 });
+
+        var painted = false;
+        var deadline = DateTime.UtcNow + Patience;
+        while (DateTime.UtcNow < deadline && !painted)
+        {
+            lock (_log) painted = _log.Any(l => l.Contains("painted", StringComparison.Ordinal));
+            if (!painted) await Task.Delay(200);
+        }
+        Assert.True(painted, Diagnosis("the client never painted the site's first page"));
+
+        var box = (await page.EvalOnSelectorAsync<JsonElement>(
+            "#viewport", "e => { const r = e.getBoundingClientRect(); return {x:r.x, y:r.y, w:r.width, h:r.height}; }"));
+        var boxX = box.GetProperty("x").GetDouble();
+        var boxY = box.GetProperty("y").GetDouble();
+        var boxW = box.GetProperty("w").GetDouble();
+        var boxH = box.GetProperty("h").GetDouble();
+
+        var arrived = false;
+
+        for (var row = 0; row < 10 && !arrived; row++)
+        {
+            for (var col = 0; col < 10 && !arrived; col++)
+            {
+                var x = (float)(boxX + boxW * (col + 0.5) / 10);
+                var y = (float)(boxY + boxH * (row + 0.5) / 10);
+
+                await page.Mouse.MoveAsync(x, y);
+                await Task.Delay(30);
+                if (await page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "pointer")
+                    continue;
+
+                await page.Mouse.ClickAsync(x, y);
+                arrived = await ArrivedOnAsync(page, 5);
+            }
+        }
+
+        arrived = arrived || await ArrivedOnAsync(page, 30);
+        Assert.True(arrived, Diagnosis("never reached the site's second page, so the video was never laid out"));
+
+        // Polled, because opening one is not synchronous with the page arriving: the engine lays out, asks for an
+        // open, and reports the rect on a later frame.
+        JsonElement placed = default;
+        for (var poll = 0; poll < 40; poll++)
+        {
+            await Task.Delay(150);
+            placed = await page.EvaluateAsync<JsonElement>(VideoProbe);
+
+            if (placed.GetProperty("present").GetBoolean()
+                && placed.GetProperty("shown").GetBoolean()
+                && placed.GetProperty("width").GetDouble() > 0
+                && placed.GetProperty("readyState").GetInt32() > 0) break;
+        }
+
+        Assert.True(placed.GetProperty("present").GetBoolean(),
+            Diagnosis("the site's video never produced a <video> element on the page"));
+        Assert.True(placed.GetProperty("shown").GetBoolean(),
+            Diagnosis("the video element was created and left hidden, so no rect ever reached it"));
+
+        // It decoded. readyState 0 is HAVE_NOTHING — an element with a source the browser could not read.
+        Assert.True(placed.GetProperty("readyState").GetInt32() > 0,
+            Diagnosis("the browser decoded nothing: the inline source never became a playable blob"));
+
+        // Behind the canvas, which is what makes the hole a hole rather than a video over the top of the site.
+        Assert.Equal("0", placed.GetProperty("zIndex").GetString());
+        Assert.Equal("1", placed.GetProperty("canvasZ").GetString());
+
+        // The canvas gave up its opaque CSS background, or the hole is filled in with grey behind the video.
+        var background = placed.GetProperty("canvasBackground").GetString() ?? "";
+        Assert.True(background.Contains("rgba(0, 0, 0, 0)", StringComparison.Ordinal)
+                    || background.Contains("transparent", StringComparison.Ordinal),
+            Diagnosis($"the canvas kept an opaque background ({background}), so the punched hole shows nothing"));
+
+        var left = placed.GetProperty("left").GetDouble();
+        var top = placed.GetProperty("top").GetDouble();
+        var width = placed.GetProperty("width").GetDouble();
+        var canvasLeft = placed.GetProperty("canvasLeft").GetDouble();
+        var canvasTop = placed.GetProperty("canvasTop").GetDouble();
+        var canvasWidth = placed.GetProperty("canvasWidth").GetDouble();
+        var canvasHeight = placed.GetProperty("canvasHeight").GetDouble();
+
+        Assert.True(left >= canvasLeft - 1 && left <= canvasLeft + canvasWidth,
+            Diagnosis($"the video sits at x={left}, outside the canvas box [{canvasLeft}, {canvasLeft + canvasWidth}]"));
+        Assert.True(top >= canvasTop - 1 && top <= canvasTop + canvasHeight,
+            Diagnosis($"the video sits at y={top}, outside the canvas box [{canvasTop}, {canvasTop + canvasHeight}]"));
+
+        // THE CONVERSION ITSELF, against the engine's own number rather than against a guess at the layout.
+        //
+        // The rect arrives in canvas pixels and the element is laid out in CSS ones, so the element must come out
+        // exactly `density` times narrower. Checking it any other way means predicting where the hybrid zoom put a
+        // 320-pixel element, and the loose version of this assertion — "it fits inside the canvas" — was measured
+        // to pass with the division removed, because at this page's zoom even a doubled element still fits.
+        var ratio = placed.GetProperty("ratio").GetDouble();
+        var asked = placed.GetProperty("askedWidth").GetDouble();
+
+        Assert.True(ratio > 1.5,
+            Diagnosis($"this context reports {ratio} device pixels per CSS pixel, so the conversion under test is "
+                      + "the identity and the assertion below proves nothing"));
+        Assert.True(asked > 0, Diagnosis("no rect was ever recorded, so there is nothing to compare against"));
+
+        Assert.True(Math.Abs(width - asked / ratio) <= 1.0,
+            Diagnosis($"the engine asked for {asked} canvas pixels at {ratio}x, so the element should be "
+                      + $"{asked / ratio}px wide; it is {width}px. The engine's canvas pixels reached the page "
+                      + "without being converted to CSS ones."));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// Everything the video assertions need, read in one round trip: the element, its box, the canvas's box, and
+    /// the stacking that decides whether it is underlaid or painted over.
+    /// </summary>
+    private const string VideoProbe = """
+        () => {
+          const v = document.querySelector('video');
+          const c = document.getElementById('viewport');
+          if (!v || !c) return { present: false, shown: false, width: 0, height: 0, left: 0, top: 0,
+                                 canvasLeft: 0, canvasTop: 0, canvasWidth: 0, canvasHeight: 0,
+                                 readyState: 0, zIndex: '', canvasZ: '', canvasBackground: '' };
+          const vb = v.getBoundingClientRect(), cb = c.getBoundingClientRect();
+          return {
+            present: true,
+            shown: v.style.display !== 'none',
+            width: vb.width, height: vb.height, left: vb.left, top: vb.top,
+            canvasLeft: cb.left, canvasTop: cb.top, canvasWidth: cb.width, canvasHeight: cb.height,
+            readyState: v.readyState,
+            zIndex: getComputedStyle(v).zIndex,
+            canvasZ: getComputedStyle(c).zIndex,
+            canvasBackground: getComputedStyle(c).backgroundColor,
+            askedWidth: (globalThis.__cupri.lastVideoRect || {}).w || 0,
+            askedHeight: (globalThis.__cupri.lastVideoRect || {}).h || 0,
+            ratio: c.clientWidth ? c.width / c.clientWidth : 0
+          };
+        }
+        """;
+
+    /// <summary>
+    /// A right-click reaching the document, which answers with a menu of its own.
+    ///
+    /// <para><b>The browser's menu is always the wrong one here.</b> Over a canvas it offers "Save image as" for a
+    /// picture of somebody's site; over a field in that site it offers none of the editing the document can
+    /// actually do. So the page swallows it and the document paints its own — measured against the host directly,
+    /// <c>DispatchContextMenu</c> on a text field returns true and puts <c>menuitem</c> entries into the ARIA
+    /// mirror, which is also what makes this assertable: the menu is a screen reader's to read.</para>
+    ///
+    /// <para>Asserted on the MIRROR rather than on the return value, because the return value is always true — it
+    /// says the event was claimed, not that a menu opened. On bare background it claims the click and adds
+    /// nothing, so only the mirror separates a menu from a dismissal.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_right_click_opens_the_document_s_own_menu()
+    {
+        _diagnosticsName = "context-menu";
+        await ExpectLogAsync("painted");
+
+        var box = await ViewportAsync();
+        var opened = false;
+
+        // Aimed by cursor, like every other test that has to find something on this canvas: the field is what has
+        // a menu worth opening, and where it lands depends on the zoom the page was fitted at.
+        for (var row = 0; row < 12 && !opened; row++)
+        {
+            for (var col = 0; col < 6 && !opened; col++)
+            {
+                var x = (float)(box.X + box.Width * (col + 0.5) / 6);
+                var y = (float)(box.Y + box.Height * (row + 0.5) / 12);
+
+                await _page!.Mouse.MoveAsync(x, y);
+                await Task.Delay(40);
+                if (await _page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "text")
+                    continue;
+
+                await _page.Mouse.ClickAsync(x, y, new MouseClickOptions { Button = MouseButton.Right });
+
+                for (var poll = 0; poll < 12 && !opened; poll++)
+                {
+                    await Task.Delay(100);
+                    var mirror = await _page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+                    opened = mirror.Contains("menuitem", StringComparison.Ordinal);
+                }
+            }
+        }
+
+        if (!opened)
+        {
+            var last = await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            Assert.Fail(Diagnosis($"no right-click opened a menu in the document; mirror holds: {last}"));
+        }
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// Undo and redo over a history the engine keeps and the browser knows nothing about.
+    ///
+    /// <para>The chords are handled on the OFFSCREEN FIELD as well as on the canvas, because that field holds the
+    /// browser's focus whenever a field in the site has the document's — so the canvas handler never sees a
+    /// keystroke typed into a site, which is exactly when undo is wanted.</para>
+    ///
+    /// <para>Both directions are asserted, and both matter: an undo that clears the field would also pass a test
+    /// that only checked the text was gone, and it is the redo that separates a history from a delete.</para>
+    /// </summary>
+    [Fact]
+    public async Task Typing_can_be_undone_and_redone()
+    {
+        _diagnosticsName = "undo";
+        await ExpectLogAsync("painted");
+
+        var typed = "undoable";
+        var focused = await TypeIntoTheSitesFieldAsync(typed);
+        Assert.True(focused, Diagnosis("no click focused a text field in the site"));
+
+        var afterTyping = await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+        Assert.True(afterTyping.Contains(typed, StringComparison.Ordinal),
+            Diagnosis($"the typed text never reached the document; mirror holds: {afterTyping}"));
+
+        await _page.Keyboard.PressAsync("Control+Z");
+        var undone = await MirrorSettlesAsync(mirror => !mirror.Contains(typed, StringComparison.Ordinal));
+        Assert.True(undone, Diagnosis("Ctrl+Z left the typed text in the document"));
+
+        await _page.Keyboard.PressAsync("Control+Y");
+        var redone = await MirrorSettlesAsync(mirror => mirror.Contains(typed, StringComparison.Ordinal));
+        Assert.True(redone, Diagnosis("Ctrl+Y did not bring the undone text back"));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>Polls the accessibility mirror until it satisfies <paramref name="settled"/>, or gives up.</summary>
+    private async Task<bool> MirrorSettlesAsync(Func<string, bool> settled, int polls = 15)
+    {
+        for (var i = 0; i < polls; i++)
+        {
+            await Task.Delay(120);
+            if (settled(await _page!.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''"))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Finds the site's text field by cursor, clicks it and types. Shared because three tests need a field with
+    /// something in it, and because finding one is the fiddly part: sweeping and clicking everything hits the
+    /// in-site link first and navigates away, which reads as "no field" and is entirely misleading.
+    /// </summary>
+    private async Task<bool> TypeIntoTheSitesFieldAsync(string text)
+    {
+        var box = await ViewportAsync();
+
+        for (var row = 0; row < 12; row++)
+        {
+            for (var col = 0; col < 6; col++)
+            {
+                var x = (float)(box.X + box.Width * (col + 0.5) / 6);
+                var y = (float)(box.Y + box.Height * (row + 0.5) / 12);
+
+                await _page!.Mouse.MoveAsync(x, y);
+                await Task.Delay(40);
+                if (await _page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "text")
+                    continue;
+
+                await _page.Mouse.ClickAsync(x, y);
+                await Task.Delay(120);
+
+                var onField = await _page.EvaluateAsync<bool>(
+                    "() => document.activeElement && document.activeElement.tagName === 'TEXTAREA'");
+                if (!onField) continue;
+
+                await _page.Keyboard.TypeAsync(text);
+                await Task.Delay(400);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -754,7 +1080,15 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
         {
             var client = _log.Count > 0 ? string.Join(Indent, _log) : "(nothing — the module never ran)";
             var node = _node.NodeLog.Count > 0 ? string.Join(Indent, _node.NodeLog) : "(nothing)";
-            return $"{headline}\n\nclient log:{Indent}{client}\n\nnode log:{Indent}{node}";
+
+            // Page errors are printed with the rest rather than only by the assertion at the end of each test:
+            // a failure that stops a test early never reaches that assertion, and an exception thrown inside the
+            // module is exactly the kind of failure that stops one early.
+            string errors;
+            lock (_pageErrors)
+                errors = _pageErrors.Count > 0 ? string.Join(Indent, _pageErrors) : "(none)";
+
+            return $"{headline}\n\npage errors:{Indent}{errors}\n\nclient log:{Indent}{client}\n\nnode log:{Indent}{node}";
         }
     }
 

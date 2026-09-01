@@ -57,6 +57,23 @@ internal static unsafe partial class BrowserInput
     private const int Copy = 14;
     private const int Cut = 15;
 
+    // Editing the browser has no part in. A right-click is the document's — it paints its own menu, measured to
+    // carry Paste and Select All — and undo is a history only the engine keeps.
+    private const int ContextMenu = 16;
+    private const int Undo = 17;
+    private const int Redo = 18;
+
+    // The page telling the ENGINE something, which is the direction video runs in. Everything else here is the
+    // visitor acting; these are the browser reporting what its own decoder did. A play that the browser refused
+    // for want of a gesture arrives as PlayState(false), and the document's controls follow that rather than the
+    // request that was made.
+    private const int Fullscreen = 19;
+    private const int VideoMeta = 20;
+    private const int VideoReady = 21;
+    private const int VideoPlayState = 22;
+    private const int VideoTime = 23;
+    private const int VideoEnded = 24;
+
     /// <summary>Reused across frames: this runs at display rate, and a fresh array per frame is pure garbage.</summary>
     private static readonly byte[] Buffer = new byte[MaxInputBytes];
 
@@ -148,6 +165,17 @@ internal static unsafe partial class BrowserInput
                 case Inserted: BrowserRenderer.Inserted(text); break;
                 case Copy: BrowserRenderer.Copy(); break;
                 case Cut: BrowserRenderer.Cut(); break;
+
+                case ContextMenu: BrowserRenderer.ContextMenu(x, y); break;
+                case Undo: BrowserRenderer.Undo(); break;
+                case Redo: BrowserRenderer.Redo(); break;
+
+                case Fullscreen: BrowserRenderer.HostFullscreen(i0 != 0); break;
+                case VideoMeta: BrowserRenderer.VideoMeta(i0, x, (int)a, (int)b); break;
+                case VideoReady: BrowserRenderer.VideoReady(i0); break;
+                case VideoPlayState: BrowserRenderer.VideoPlayState(i0, i1 != 0); break;
+                case VideoTime: BrowserRenderer.VideoTime(i0, x); break;
+                case VideoEnded: BrowserRenderer.VideoEnded(i0); break;
             }
 
             // The text is NUL-terminated on the wire and the whole record is padded to four bytes, which is what
