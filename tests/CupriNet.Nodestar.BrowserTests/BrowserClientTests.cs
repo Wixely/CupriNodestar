@@ -495,6 +495,104 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// Copying out of a field in the site, onto the real system clipboard.
+    ///
+    /// <para><b>The client has to do this; the engine does not.</b> Measured against the host directly:
+    /// <c>KeyChord("c", Ctrl)</c> answers false and raises nothing on the bridge, because those chords are for
+    /// shortcuts an app registered. What the engine offers is <c>CopySelection()</c>, so the page intercepts the
+    /// browser's own copy event, asks for the document's selection a frame later, and writes that.</para>
+    ///
+    /// <para>Asserted by reading the clipboard back through the browser, which is the only place the answer
+    /// actually matters — a test that checked the client had CALLED a write would pass just as well if the write
+    /// never reached the system.</para>
+    /// </summary>
+    [Fact]
+    public async Task Copying_from_a_field_reaches_the_system_clipboard()
+    {
+        _diagnosticsName = "clipboard";
+
+        await using var context = await _browser!.NewContextAsync();
+        await context.GrantPermissionsAsync(["clipboard-read", "clipboard-write"]);
+
+        var page = await context.NewPageAsync();
+        var log = new List<string>();
+        page.Console += (_, m) => { lock (log) log.Add(m.Text); };
+        await page.GotoAsync(_node.AppUrl, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = 30_000 });
+
+        var deadline = DateTime.UtcNow + Patience;
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (log) if (log.Any(l => l.Contains("painted", StringComparison.Ordinal))) break;
+            await Task.Delay(200);
+        }
+
+        // Something the clipboard cannot already contain, so reading it back proves this copy rather than a
+        // leftover from the machine the test happens to run on.
+        var secret = "cupri-clip-" + Guid.NewGuid().ToString("N")[..8];
+        await page.EvaluateAsync("() => navigator.clipboard.writeText('nothing-copied-yet')");
+
+        var box = await page.EvalOnSelectorAsync<System.Text.Json.JsonElement>(
+            "#viewport", "e => { const r = e.getBoundingClientRect(); return {x:r.x, y:r.y, w:r.width, h:r.height}; }");
+        var bx = box.GetProperty("x").GetDouble();
+        var by = box.GetProperty("y").GetDouble();
+        var bw = box.GetProperty("w").GetDouble();
+        var bh = box.GetProperty("h").GetDouble();
+
+        var focused = false;
+        for (var row = 0; row < 12 && !focused; row++)
+        {
+            for (var col = 0; col < 6 && !focused; col++)
+            {
+                var x = (float)(bx + bw * (col + 0.5) / 6);
+                var y = (float)(by + bh * (row + 0.5) / 12);
+
+                await page.Mouse.MoveAsync(x, y);
+                await Task.Delay(40);
+                if (await page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "text") continue;
+
+                await page.Mouse.ClickAsync(x, y);
+                await Task.Delay(120);
+                focused = await page.EvaluateAsync<bool>(
+                    "() => document.activeElement && document.activeElement.tagName === 'TEXTAREA'");
+            }
+        }
+
+        Assert.True(focused, "no click focused a text field in the site");
+
+        await page.Keyboard.TypeAsync(secret);
+        await Task.Delay(400);
+
+        await page.Keyboard.PressAsync("Control+A");
+        await Task.Delay(200);
+        await page.Keyboard.PressAsync("Control+C");
+        await Task.Delay(600);
+
+        var clipboard = await page.EvaluateAsync<string>("() => navigator.clipboard.readText()");
+
+        Assert.True(clipboard.Contains(secret, StringComparison.Ordinal),
+            $"the clipboard holds '{clipboard}' rather than the text typed into the site's field ('{secret}'). "
+            + "Either the copy event never reached the client, or the document's selection was empty when it "
+            + "answered.");
+
+        // Cut, which is the same read plus a deletion, and the half that can lose text: CutSelection both returns
+        // and removes, so writing before cutting would be the ordering where a refused clipboard destroys the
+        // visitor's text. Asserted from both ends — the clipboard has it, the document no longer does.
+        await page.EvaluateAsync("() => navigator.clipboard.writeText('nothing-cut-yet')");
+        await page.Keyboard.PressAsync("Control+A");
+        await Task.Delay(200);
+        await page.Keyboard.PressAsync("Control+X");
+        await Task.Delay(600);
+
+        var cut = await page.EvaluateAsync<string>("() => navigator.clipboard.readText()");
+        Assert.True(cut.Contains(secret, StringComparison.Ordinal),
+            $"a cut left '{cut}' on the clipboard rather than '{secret}'.");
+
+        var aria = await page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+        Assert.False(aria.Contains(secret, StringComparison.Ordinal),
+            "the cut text is still in the document — the selection was copied but never removed.");
+    }
+
+    /// <summary>
     /// The site being readable by a screen reader.
     ///
     /// <para><b>Why this is a gate test and not a unit test.</b> A canvas announces itself and nothing inside it, so

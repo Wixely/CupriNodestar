@@ -385,6 +385,40 @@ internal static partial class BrowserRenderer
     }
 
     /// <summary>
+    /// Copies the document's selection to the system clipboard.
+    ///
+    /// <para><b>The client does this, not the engine.</b> Measured: <c>KeyChord("c", Ctrl)</c> answers false and
+    /// raises nothing on the bridge — those chords are for shortcuts an app registered, and the clipboard is not
+    /// one of them. What the engine offers instead is <c>CopySelection()</c>, which hands back the selected text
+    /// and leaves it selected.</para>
+    ///
+    /// <para>Nothing is written when the selection is empty: putting an empty string on the clipboard would
+    /// silently destroy whatever the visitor had copied from somewhere else.</para>
+    /// </summary>
+    public static void Copy()
+    {
+        if (!Ready) return;
+
+        var text = WebHostCore.CopySelection();
+        if (!string.IsNullOrEmpty(text)) Bridge.ClipboardWrite(text);
+    }
+
+    /// <summary>
+    /// The same, and removes what it took.
+    ///
+    /// <para>The order matters: the text is read out of the cut before anything is written, because
+    /// <c>CutSelection</c> both returns the text and deletes it. Writing first and cutting after would be the same
+    /// two operations in the order that loses the text if the write throws.</para>
+    /// </summary>
+    public static void Cut()
+    {
+        if (!Ready) return;
+
+        var text = WebHostCore.CutSelection();
+        if (!string.IsNullOrEmpty(text)) Bridge.ClipboardWrite(text);
+    }
+
+    /// <summary>
     /// Whether the document has a focused text field, and so whether a keystroke belongs to it.
     ///
     /// <para>Answered by the engine rather than assumed. The host also tells the page directly, through

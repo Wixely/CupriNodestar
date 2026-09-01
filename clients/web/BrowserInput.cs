@@ -52,6 +52,11 @@ internal static unsafe partial class BrowserInput
     private const int Composed = 12;
     private const int Inserted = 13;
 
+    // The page asking the document for its selection. Copy and cut are the client's job because the engine does
+    // not claim the chords itself — measured: KeyChord("c", Ctrl) answers false and no bridge call follows.
+    private const int Copy = 14;
+    private const int Cut = 15;
+
     /// <summary>Reused across frames: this runs at display rate, and a fresh array per frame is pure garbage.</summary>
     private static readonly byte[] Buffer = new byte[MaxInputBytes];
 
@@ -141,6 +146,8 @@ internal static unsafe partial class BrowserInput
                 case Composing: BrowserRenderer.Composing(text); break;
                 case Composed: BrowserRenderer.Composed(text); break;
                 case Inserted: BrowserRenderer.Inserted(text); break;
+                case Copy: BrowserRenderer.Copy(); break;
+                case Cut: BrowserRenderer.Cut(); break;
             }
 
             // The text is NUL-terminated on the wire and the whole record is padded to four bytes, which is what

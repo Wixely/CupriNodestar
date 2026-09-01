@@ -435,9 +435,9 @@ system, while this one is honest about what a clone actually gets today.
       canvas exactly half opaque and `The_client_dials_the_node_that_served_it_and_renders_its_site` fails.
       Established by mutation, not assumed.
 
-- [~] **Stage 2 of the host adoption: touch, and text input.** A finger now reaches the document as TOUCH rather than as a
-      synthesised mouse, so the host's recogniser — flings with momentum, long-press — has the stream it needs. IME
-      and the clipboard are the remaining two thirds of this stage and are not done.
+- [x] **Stage 2 of the host adoption: touch, text input and the clipboard.** A finger now reaches the document as TOUCH
+      rather than as a synthesised mouse, so the host's recogniser — flings with momentum, long-press — has the stream
+      it needs. All three thirds are done.
 
       **The page now DROPS the pointer events a touch also produces**, which is the part that makes it work rather
       than double. A browser sends every touch twice, and forwarding both delivers one gesture to the pointer path
@@ -479,6 +479,33 @@ system, while this one is honest about what a clone actually gets today.
       Not covered: multi-touch with more than one finger, fling momentum, and long-press. The plumbing carries
       identifiers and timings for all three, but Playwright's touchscreen taps and does not drag, so none of them
       is asserted here. That is a gap in the test, not a claim about the feature.
+
+      **The clipboard, which the client has to drive because the engine does not.** Measured against the host
+      directly: `KeyChord("c", Ctrl)` answers false and raises nothing on the bridge — those chords are for
+      shortcuts an app registered, and the clipboard is not one of them. What the engine offers instead is
+      `CopySelection()` and `CutSelection()`. So the page intercepts the browser's own `copy` and `cut` events on
+      the hidden field, prevents their default (the field is emptied after every insertion, so a native copy would
+      put nothing on the clipboard), and the renderer answers a frame later with the DOCUMENT's selection.
+
+      **Ctrl+A had to be carried too, and that was the failing half.** `CopySelection()` returns an empty string
+      until a `SelectAll` is dispatched, and the first version of this test failed for exactly that reason: the
+      copy reached the client and the document had nothing selected to answer with. Select-all is a chord rather
+      than a key, so it cannot come out of the `editKey` map — that switches on `e.key` alone — and is handled in
+      the keydown handler.
+
+      **Cut writes after it takes, not before.** `CutSelection` both returns the text and deletes it, so the other
+      ordering is the one where a clipboard that refuses the write has already destroyed the visitor's text.
+
+      **Paste is deliberately not intercepted.** The hidden field has focus, so the browser pastes into it
+      natively, that raises `input`, and the text reaches the document by the path everything else already takes.
+      Handling it would mean asking for clipboard-READ permission to reimplement what the browser does for free.
+      `ClipboardPaste` is still wired, because the engine raises it from its own paths — a context menu.
+
+      Gate-tested by typing a value nothing else could hold into a field in the site, copying, and reading
+      `navigator.clipboard.readText()` back — the only place the answer matters, since a test that checked the
+      client had CALLED a write would pass just as well if the write never reached the system. Mutation-tested
+      three ways: a renderer that reads the selection and drops it, a page that never sends the select-all, and a
+      cut that copies without removing. All three fail it.
 
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It

@@ -37,6 +37,12 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     [LibraryImport("js", EntryPoint = "cupri_set_text_input")]
     private static partial void SetTextInputJs(int focused, int numeric, int multiline, double x, double y);
 
+    [LibraryImport("js", EntryPoint = "cupri_clipboard_write", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial void ClipboardWriteJs(string text);
+
+    [LibraryImport("js", EntryPoint = "cupri_clipboard_paste")]
+    private static partial void ClipboardPasteJs();
+
     /// <summary>
     /// The painted frame, blitted to the canvas.
     ///
@@ -91,14 +97,25 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
         SetTextInputJs(focused ? 1 : 0, numeric ? 1 : 0, multiline ? 1 : 0, x, y);
     }
 
+    /// <summary>Puts text on the system clipboard. Asynchronous on the page's side; nothing here waits for it.</summary>
+    public void ClipboardWrite(string text) => ClipboardWriteJs(text);
+
+    /// <summary>
+    /// The document asking for the clipboard's contents.
+    ///
+    /// <para>Raised by the engine's own paths — a context menu — rather than by Ctrl+V, which the offscreen field
+    /// handles natively: it has focus, so the browser pastes into it, that raises an input event, and the text
+    /// reaches the document the way all inserted text does. Reading the clipboard needs permission and pasting
+    /// into a focused field does not, so the cheaper path is left to do the common case.</para>
+    /// </summary>
+    public void ClipboardPaste() => ClipboardPasteJs();
+
     // ---- Not wired yet, and silent on purpose --------------------------------------------------------------
     //
     // Every one of these is a capability this client did not have before the host arrived, so leaving them empty
     // loses nothing that worked. They are listed rather than thrown from: a document that opens a video must not
     // take the page down because the client has no video surface for it.
 
-    public void ClipboardPaste() { }
-    public void ClipboardWrite(string text) { }
     public void SetFavicon(string dataUri) { }
     public void VideoClose(int id) { }
     public void VideoLoop(int id, bool loop) { }

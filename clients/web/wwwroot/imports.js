@@ -85,10 +85,33 @@ mergeInto(LibraryManager.library, {
         if (text) cupri.input.push({ k: 13, x: 0, y: 0, t: text });
       });
 
+      // COPY AND CUT come from the document's selection, not from this field.
+      //
+      // The field is emptied after every insertion, so a native copy would put nothing on the clipboard. The
+      // default is prevented and the request is queued instead; the renderer answers next frame with whatever the
+      // document has selected, and writes that.
+      //
+      // PASTE is deliberately NOT handled here. This field has focus, so the browser pastes into it natively, that
+      // raises `input`, and the text reaches the document by the path everything else already takes. Intercepting
+      // it would mean asking for clipboard-read permission to reimplement what the browser does for free.
+      f.addEventListener('copy', function (e) { e.preventDefault(); cupri.input.push({ k: 14, x: 0, y: 0 }); });
+      f.addEventListener('cut', function (e) { e.preventDefault(); cupri.input.push({ k: 15, x: 0, y: 0 }); });
+
       // Editing keys still have to reach the document, and they arrive here rather than at the canvas because
       // this is what has focus while a field is being typed into.
       f.addEventListener('keydown', function (e) {
         if (e.isComposing) return;   // the IME owns the key; committing is what compositionend is for
+
+        // Select-all is a CHORD, not a key, so it cannot come out of the map below — that switches on `e.key`
+        // alone. It is here because copy has nothing to answer with until the document has a selection: measured,
+        // CopySelection() returns an empty string until a SelectAll is dispatched, and this field's own selection
+        // is no substitute because the field is emptied after every insertion.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'a' || e.key === 'A')) {
+          cupri.input.push({ k: 6, x: 0, y: 0, i0: 14, i1: 2, t: '' });
+          e.preventDefault();
+          return;
+        }
+
         const edit = cupri.editKey(e.key);
         if (!edit) return;           // printable text comes through `input` instead, already composed
         cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: (e.shiftKey ? 1 : 0) | ((e.ctrlKey || e.metaKey) ? 2 : 0), t: '' });
@@ -152,6 +175,7 @@ mergeInto(LibraryManager.library, {
         case 'Tab': return 10;
         case ' ': return 12;
         case 'Escape': return 13;
+        // 14 is SelectAll, which is Ctrl+A rather than a key of its own — see the keydown handler.
         default: return 0;
       }
     },
@@ -653,6 +677,40 @@ mergeInto(LibraryManager.library, {
   cupri_set_key_capture__deps: ['$cupri'],
   cupri_set_key_capture: function (capture) {
     cupri.keyCapture = !!capture;
+  },
+
+  // Puts text the document copied onto the system clipboard.
+  //
+  // Asynchronous, and nothing waits for it: the visitor pressed a key, the answer is a clipboard they will use
+  // later, and there is nothing useful to do if it fails beyond saying so. A failure here is a browser refusing
+  // permission, not the document being wrong.
+  cupri_clipboard_write__deps: ['$cupri'],
+  cupri_clipboard_write: function (ptr) {
+    const text = UTF8ToString(ptr);
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text).catch(function (err) {
+        console.log('[cupri] the clipboard refused a write: ' + err);
+      });
+    } catch (err) {
+      console.log('[cupri] no clipboard to write to: ' + err);
+    }
+  },
+
+  // The document asking for the clipboard — a context-menu Paste rather than Ctrl+V, which the hidden field
+  // already handles natively. Reading needs permission, so this can be refused; the text arrives as an ordinary
+  // insertion when it does not.
+  cupri_clipboard_paste__deps: ['$cupri'],
+  cupri_clipboard_paste: function () {
+    try {
+      navigator.clipboard.readText().then(function (text) {
+        if (text) cupri.input.push({ k: 13, x: 0, y: 0, t: text });
+      }).catch(function (err) {
+        console.log('[cupri] the clipboard refused a read: ' + err);
+      });
+    } catch (err) {
+      console.log('[cupri] no clipboard to read from: ' + err);
+    }
   },
 
   // Where the document's caret is, and whether it has one at all.
