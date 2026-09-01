@@ -385,6 +385,116 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// Typing into a field in the site, and an input method composing into it.
+    ///
+    /// <para><b>This was unreachable until recently.</b> A plain L2 document had nowhere to put a keystroke — an
+    /// ordinary <c>&lt;input&gt;</c> was not focusable and <c>DispatchKey</c> answered false for everything — so
+    /// this client forwarded keys correctly to a document that could not accept them. CupriFace 0.12.0's
+    /// <c>cupri-textfield</c> takes focus and reports a caret, which is what changes.</para>
+    ///
+    /// <para><b>Composition is the part that matters and the part that is easy to fake.</b> Typing Latin letters
+    /// exercises almost nothing: they arrive settled. An input method instead sends a running DRAFT — "nihon"
+    /// towards a Japanese word — which the document shows and replaces as it grows. That draft is what this
+    /// asserts, driven through CDP's <c>Input.imeSetComposition</c>, and it is the one signal that separates
+    /// composition from typing: mutation-tested, disabling <c>SetComposition</c> fails it.</para>
+    ///
+    /// <para><b>The COMMIT is carried but not asserted, which is worth knowing before trusting this test.</b> CDP's
+    /// <c>Input.insertText</c> does not raise a <c>compositionend</c> — the text arrives as ordinary insertion — so
+    /// the final Japanese below travels the same path as the Latin typing above, and disabling the commit does not
+    /// fail anything here. A real input method does raise it. Verified instead against the engine directly, where
+    /// <c>CommitComposition</c> ends the composition and leaves the committed text.</para>
+    ///
+    /// <para>Read back through the accessibility mirror, because the field is painted to a canvas: there is no DOM
+    /// node to query for its value, and the mirror is the only text the page has.</para>
+    /// </summary>
+    [Fact]
+    public async Task Typing_and_composing_reach_a_field_in_the_site()
+    {
+        _diagnosticsName = "text-input";
+        await ExpectLogAsync("painted");
+
+        // Focus the field by clicking it — but ONLY where the document says a text cursor belongs.
+        //
+        // An earlier version clicked every cell of the sweep and the first thing it hit was the in-site link, so
+        // the page navigated to the second one, which has no field. The failure then read "no click focused a text
+        // field", which was true and entirely misleading. The cursor is what tells a field from a link before
+        // committing to a click.
+        var box = await ViewportAsync();
+        var focused = false;
+
+        for (var row = 0; row < 12 && !focused; row++)
+        {
+            for (var col = 0; col < 6 && !focused; col++)
+            {
+                var x = (float)(box.X + box.Width * (col + 0.5) / 6);
+                var y = (float)(box.Y + box.Height * (row + 0.5) / 12);
+
+                await _page!.Mouse.MoveAsync(x, y);
+                await Task.Delay(40);
+
+                var cursor = await _page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''");
+                if (cursor != "text") continue;
+
+                await _page.Mouse.ClickAsync(x, y);
+                await Task.Delay(120);
+
+                // The client moves an offscreen field to the caret and focuses it once the document has one, so
+                // the browser's own focus is the honest signal that a field in the SITE took it.
+                focused = await _page.EvaluateAsync<bool>(
+                    "() => document.activeElement && document.activeElement.tagName === 'TEXTAREA'");
+            }
+        }
+
+        if (!focused)
+        {
+            var made = await _page!.EvaluateAsync<bool>("() => !!document.querySelector('textarea')");
+            var mirror = await _page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+            Assert.Fail(Diagnosis(
+                "no click focused a text field in the site. The offscreen field the client creates for composition "
+                + (made ? "EXISTS, so the document reported a caret and focus did not follow"
+                        : "was never created, so the document never reported a focused field at all")
+                + Environment.NewLine + "mirror: " + mirror));
+        }
+
+        await _page!.Keyboard.TypeAsync("cupri");
+        await Task.Delay(400);
+
+        var afterTyping = await _page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+        if (!afterTyping.Contains("cupri", StringComparison.Ordinal))
+            Assert.Fail(Diagnosis($"typed text never reached the document; the mirror holds: {afterTyping}"));
+
+        // Now compose, the way an input method does: a draft that is replaced as it grows, then one commit.
+        var cdp = await _page.Context.NewCDPSessionAsync(_page);
+        await cdp.SendAsync("Input.imeSetComposition", new Dictionary<string, object>
+        {
+            ["text"] = "nihon",
+            ["selectionStart"] = 5,
+            ["selectionEnd"] = 5,
+        });
+        await Task.Delay(300);
+
+        var midComposition = await _page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+
+        // THE DRAFT IS THE ASSERTION THAT DISTINGUISHES COMPOSITION FROM TYPING. A running draft only reaches the
+        // document through SetComposition; if that path were dead the mirror would show the typed text alone and
+        // everything after this would still pass, because the commit below arrives as ordinary inserted text.
+        if (!midComposition.Contains("nihon", StringComparison.Ordinal))
+            Assert.Fail(Diagnosis($"the composition draft never reached the document; the mirror holds: {midComposition}"));
+
+        await cdp.SendAsync("Input.insertText", new Dictionary<string, object> { ["text"] = "日本" });
+        await Task.Delay(400);
+
+        var committed = await _page.EvalOnSelectorAsync<string>("#aria", "e => e.innerHTML || ''");
+
+        if (!committed.Contains("日本", StringComparison.Ordinal))
+            Assert.Fail(Diagnosis(
+                "the committed composition never reached the document. mid-composition the mirror held: "
+                + midComposition + Environment.NewLine + "after commit: " + committed));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
     /// The site being readable by a screen reader.
     ///
     /// <para><b>Why this is a gate test and not a unit test.</b> A canvas announces itself and nothing inside it, so

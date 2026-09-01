@@ -435,7 +435,7 @@ system, while this one is honest about what a clone actually gets today.
       canvas exactly half opaque and `The_client_dials_the_node_that_served_it_and_renders_its_site` fails.
       Established by mutation, not assumed.
 
-- [~] **Stage 2 of the host adoption: touch.** A finger now reaches the document as TOUCH rather than as a
+- [~] **Stage 2 of the host adoption: touch, and text input.** A finger now reaches the document as TOUCH rather than as a
       synthesised mouse, so the host's recogniser — flings with momentum, long-press — has the stream it needs. IME
       and the clipboard are the remaining two thirds of this stage and are not done.
 
@@ -454,6 +454,27 @@ system, while this one is honest about what a clone actually gets today.
       **Gate-tested on a touch-enabled context, and the test can only pass if the whole path works** — the pointer
       path is deliberately dead there, so a tap that still follows a link proves touch carried it. Mutation-tested:
       not attaching the touch listeners fails it.
+
+      **Text input and IME.** An offscreen textarea is moved to the document's caret and takes focus whenever a
+      field in the site has it, because composition needs a real editable element: an input method attaches to one,
+      reads its position to place the candidate list, and delivers a running draft to it. Composition drafts reach
+      `SetComposition`, commits reach `CommitComposition`, and an empty commit is treated as a CANCEL — otherwise
+      an abandoned draft stays underlined on screen with no way to clear it. `inputmode` follows the numeric hint,
+      so a phone offers digits for a numeric field.
+
+      **The client's own comment about keys was out of date and is corrected.** It said a plain L2 document has
+      nowhere to put a keystroke — true of 0.3.0 and 0.5.0, and not of 0.12.0, where a `<cupri-textfield>` takes
+      focus from a click and reports a caret. The key path had been correct and unreachable for two versions.
+
+      Gate-tested by typing into a field in the sample site and composing into it through CDP's
+      `Input.imeSetComposition`. The DRAFT is the assertion that separates composition from typing, and it is
+      mutation-tested. **The commit is carried but not asserted**: CDP's `Input.insertText` raises no
+      `compositionend`, so that text travels the ordinary insertion path and disabling the commit fails nothing in
+      the browser. It is verified against the engine directly instead.
+
+      Finding the field to click had to be done by CURSOR rather than by sweeping and clicking: the first version
+      clicked everything, hit the in-site link, navigated to the second page, and reported "no click focused a text
+      field" — true, and entirely misleading.
 
       Not covered: multi-touch with more than one finger, fling momentum, and long-press. The plumbing carries
       identifiers and timings for all three, but Playwright's touchscreen taps and does not drag, so none of them

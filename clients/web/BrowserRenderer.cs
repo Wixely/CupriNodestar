@@ -346,6 +346,45 @@ internal static partial class BrowserRenderer
     }
 
     /// <summary>
+    /// Text an input method is still deciding about.
+    ///
+    /// <para>Sent on every keystroke of a composition — typing "nihon" towards 日本 produces one of these per
+    /// letter. The document shows it underlined and replaces it wholesale each time, which is why this passes the
+    /// running text rather than a delta.</para>
+    /// </summary>
+    public static void Composing(string text)
+    {
+        if (!Ready) return;
+        WebHostCore.SetComposition(text);
+    }
+
+    /// <summary>
+    /// What the input method settled on, which is the only part that becomes real text.
+    ///
+    /// <para>An empty commit is a CANCELLED composition — the visitor pressed Escape or clicked away — and has to
+    /// be told apart from committing nothing, or the underlined draft stays on screen with no way to remove it.</para>
+    /// </summary>
+    public static void Composed(string text)
+    {
+        if (!Ready) return;
+
+        if (string.IsNullOrEmpty(text)) WebHostCore.CancelComposition();
+        else WebHostCore.CommitComposition(text);
+    }
+
+    /// <summary>
+    /// Text that arrived already settled: ordinary typing, a paste, a phone keyboard completing a word.
+    ///
+    /// <para>Whole strings rather than characters, because that is how the browser delivers them — a paste is one
+    /// event, and so is an autocorrected word replacing what was typed.</para>
+    /// </summary>
+    public static void Inserted(string text)
+    {
+        if (!Ready || string.IsNullOrEmpty(text)) return;
+        WebHostCore.KeyChar(text);
+    }
+
+    /// <summary>
     /// Whether the document has a focused text field, and so whether a keystroke belongs to it.
     ///
     /// <para>Answered by the engine rather than assumed. The host also tells the page directly, through

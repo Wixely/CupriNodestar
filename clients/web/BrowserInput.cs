@@ -17,12 +17,12 @@ namespace CupriNet.Nodestar.Client;
 /// renderer is mid-frame often enough for that to matter. Draining between frames keeps the managed side in control
 /// of when a click is handled.</para>
 ///
-/// <para><b>Keys are forwarded but nothing consumes them yet.</b> Measured against CupriFace 0.3.0 and 0.5.0: an
-/// <c>&lt;input&gt;</c> in ordinary markup is not focusable, and <c>DispatchKey</c> answers false for the arrows,
-/// space and End even with the pointer over a scrollable region. So a plain L2 document — which is what an L2 site
-/// is — has nowhere to put a keystroke today. The path is here and correct, so the client needs no change when that
-/// stops being true, and until then <see cref="SetKeyCapture"/> keeps the browser's own key behaviour intact rather
-/// than swallowing keys for nothing.</para>
+/// <para><b>Keys reach a document that can now accept them.</b> That was not true until recently: measured against
+/// CupriFace 0.3.0 and 0.5.0, an <c>&lt;input&gt;</c> in ordinary markup was not focusable and <c>DispatchKey</c>
+/// answered false for everything, so this path was correct and unreachable. As of 0.12.0 a
+/// <c>&lt;cupri-textfield&gt;</c> takes focus from a click and reports a caret, which is also what an input method
+/// needs to attach to. <see cref="SetKeyCapture"/> still gates whether the page claims a keystroke, so a document
+/// with nothing focused leaves the browser's own key behaviour alone.</para>
 /// </summary>
 internal static unsafe partial class BrowserInput
 {
@@ -43,6 +43,14 @@ internal static unsafe partial class BrowserInput
     private const int TouchMove = 8;
     private const int TouchUp = 9;
     private const int TouchCancel = 10;
+
+    // Text, as an input method produces it. Composition is not typing: a visitor picking Japanese characters sends
+    // a running "this is what I have so far" (Composing) and then one "this is what I meant" (Composed), and only
+    // the second is real text. Inserted covers everything that arrives already settled — ordinary typing through
+    // the offscreen field, a paste, a phone keyboard completing a word.
+    private const int Composing = 11;
+    private const int Composed = 12;
+    private const int Inserted = 13;
 
     /// <summary>Reused across frames: this runs at display rate, and a fresh array per frame is pure garbage.</summary>
     private static readonly byte[] Buffer = new byte[MaxInputBytes];
@@ -129,6 +137,10 @@ internal static unsafe partial class BrowserInput
                 case TouchMove: BrowserRenderer.TouchMove(i0, x, y, a); break;
                 case TouchUp: BrowserRenderer.TouchUp(i0, x, y, a); break;
                 case TouchCancel: BrowserRenderer.TouchCancel(i0, a); break;
+
+                case Composing: BrowserRenderer.Composing(text); break;
+                case Composed: BrowserRenderer.Composed(text); break;
+                case Inserted: BrowserRenderer.Inserted(text); break;
             }
 
             // The text is NUL-terminated on the wire and the whole record is padded to four bytes, which is what

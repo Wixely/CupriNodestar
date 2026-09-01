@@ -31,6 +31,73 @@ mergeInto(LibraryManager.library, {
     // What the SCTP association negotiated as its largest message, or 0 before the channel opens.
     sctpMax: 0,
 
+    // The offscreen field an IME composes into.
+    //
+    // A canvas cannot host composition. An input method needs a real editable element to attach to — it reads the
+    // caret from it to place its candidate window, and delivers partial text to it as the visitor picks characters.
+    // Without one, everything that is not direct Latin typing is unreachable: Japanese, Chinese, Korean, and every
+    // phone keyboard that offers autocorrect or suggestions, all of which arrive as composition rather than as
+    // keystrokes.
+    ime: null,
+    composing: false,
+
+    // Makes the hidden field once, on demand.
+    imeField: function () {
+      if (cupri.ime) return cupri.ime;
+
+      const f = document.createElement('textarea');
+      f.setAttribute('autocapitalize', 'off');
+      f.setAttribute('autocomplete', 'off');
+      f.setAttribute('autocorrect', 'off');
+      f.setAttribute('spellcheck', 'false');
+      f.setAttribute('aria-hidden', 'true');
+      f.tabIndex = -1;
+
+      // Positioned, not hidden. `display:none` or `visibility:hidden` would take it out of the focus order and
+      // most IMEs refuse to attach to it — so it is one transparent pixel, moved to wherever the document says
+      // the caret is, which is where a candidate window belongs.
+      f.style.cssText =
+        'position:fixed; width:1px; height:1px; padding:0; border:0; outline:none; resize:none; overflow:hidden;'
+        + ' opacity:0; z-index:-1; left:0; top:0;';
+
+      document.body.appendChild(f);
+      cupri.ime = f;
+
+      f.addEventListener('compositionstart', function () { cupri.composing = true; });
+
+      f.addEventListener('compositionupdate', function (e) {
+        cupri.input.push({ k: 11, x: 0, y: 0, t: e.data || '' });
+      });
+
+      f.addEventListener('compositionend', function (e) {
+        cupri.composing = false;
+        cupri.input.push({ k: 12, x: 0, y: 0, t: e.data || '' });
+        f.value = '';
+      });
+
+      // Text that arrived without composition: ordinary typing, a paste, or a phone keyboard inserting a word.
+      // Skipped while composing, because those characters are already going through the two handlers above and
+      // sending them twice would type everything twice over.
+      f.addEventListener('input', function (e) {
+        if (cupri.composing || e.isComposing) return;
+        const text = f.value;
+        f.value = '';
+        if (text) cupri.input.push({ k: 13, x: 0, y: 0, t: text });
+      });
+
+      // Editing keys still have to reach the document, and they arrive here rather than at the canvas because
+      // this is what has focus while a field is being typed into.
+      f.addEventListener('keydown', function (e) {
+        if (e.isComposing) return;   // the IME owns the key; committing is what compositionend is for
+        const edit = cupri.editKey(e.key);
+        if (!edit) return;           // printable text comes through `input` instead, already composed
+        cupri.input.push({ k: 6, x: 0, y: 0, i0: edit, i1: (e.shiftKey ? 1 : 0) | ((e.ctrlKey || e.metaKey) ? 2 : 0), t: '' });
+        e.preventDefault();
+      });
+
+      return f;
+    },
+
     // Whether the DOCUMENT wants keys, reported by the managed side from the engine's own focus state.
     //
     // This gates preventDefault, and getting it wrong is a real cost either way. Swallowing keys the document does
@@ -586,6 +653,37 @@ mergeInto(LibraryManager.library, {
   cupri_set_key_capture__deps: ['$cupri'],
   cupri_set_key_capture: function (capture) {
     cupri.keyCapture = !!capture;
+  },
+
+  // Where the document's caret is, and whether it has one at all.
+  //
+  // Called by the renderer whenever the focused field changes. Focus follows the DOCUMENT: when it has a field,
+  // the hidden textarea takes the browser's focus so an IME attaches to it; when it does not, focus returns to the
+  // canvas so the page keeps its own key behaviour. Moving the element to the caret is not cosmetic — an IME reads
+  // its position to place the candidate window, and a field parked at the origin puts the candidate
+  // list in the corner of the screen instead of under what is being typed.
+  cupri_set_text_input__deps: ['$cupri'],
+  cupri_set_text_input: function (focused, numeric, multiline, x, y) {
+    const canvas = cupri.canvasEl();
+    if (!canvas) return;
+
+    const f = cupri.imeField();
+
+    if (!focused) {
+      if (document.activeElement === f) { try { canvas.focus({ preventScroll: true }); } catch (err) { canvas.focus(); } }
+      return;
+    }
+
+    // The document reports the caret in CANVAS pixels; the field is positioned in the viewport.
+    const r = canvas.getBoundingClientRect();
+    f.style.left = Math.round(r.left + x) + 'px';
+    f.style.top = Math.round(r.top + y) + 'px';
+
+    // inputmode drives which keyboard a phone offers. Getting this wrong is not cosmetic either: a numeric field
+    // that raises a full alphabet keyboard is a worse experience than no hint at all.
+    f.setAttribute('inputmode', numeric ? 'numeric' : 'text');
+
+    if (document.activeElement !== f) { try { f.focus({ preventScroll: true }); } catch (err) { f.focus(); } }
   },
 
   // The cursor the document says belongs under the pointer. Set on the canvas so a link looks like a link — the

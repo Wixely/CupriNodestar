@@ -34,6 +34,9 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     [LibraryImport("js", EntryPoint = "cupri_set_key_capture")]
     private static partial void SetKeyCaptureJs(int capture);
 
+    [LibraryImport("js", EntryPoint = "cupri_set_text_input")]
+    private static partial void SetTextInputJs(int focused, int numeric, int multiline, double x, double y);
+
     /// <summary>
     /// The painted frame, blitted to the canvas.
     ///
@@ -71,13 +74,22 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     public void Navigate(string href) { }
 
     /// <summary>
-    /// Whether a text field wants the keyboard, which is what decides if the page swallows key events.
+    /// Where the document's caret is, and whether it has one.
     ///
-    /// <para>The position and the numeric/multiline hints are for a soft keyboard this client does not raise yet;
-    /// only the focus flag is wired, and it maps onto the key capture the hand-rolled input already used.</para>
+    /// <para>Two things happen here. The key capture flag decides whether the page claims keystrokes or leaves
+    /// them to the browser. And the position moves an offscreen editable field to the caret, which is what lets an
+    /// input method attach: composition needs a real element, and an IME reads that element's position to place
+    /// its candidate list. A field left at the origin puts the candidates in the corner of the screen.</para>
+    ///
+    /// <para>The numeric hint reaches <c>inputmode</c>, so a phone offers digits for a numeric field rather than a
+    /// full alphabet. <c>multiline</c> is carried but unused: the offscreen field is a textarea either way, and
+    /// nothing about how this client submits depends on it.</para>
     /// </summary>
     public void SetTextInput(bool focused, bool numeric, bool multiline, double x, double y)
-        => SetKeyCaptureJs(focused ? 1 : 0);
+    {
+        SetKeyCaptureJs(focused ? 1 : 0);
+        SetTextInputJs(focused ? 1 : 0, numeric ? 1 : 0, multiline ? 1 : 0, x, y);
+    }
 
     // ---- Not wired yet, and silent on purpose --------------------------------------------------------------
     //

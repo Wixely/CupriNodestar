@@ -134,6 +134,11 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                   /* Tall enough for the sweep to land on, short enough to leave the page's other targets
                      inside the 800x600 design box — anything past it is not on the canvas to be found. */
                   .inside { display:block; background:#cfe6cf; padding:26px 20px; }
+                  /* Tall for the same reason .hand is: the gate sweeps rather than aims, and at the zoom this
+                     page is fitted at a 44px field is thinner than the grid's step — the sweep walked over it and
+                     the failure read as "no click focused a text field" rather than as "the test missed". */
+                  .typing { display:block; width:60%; height:90px; margin-top:10px; background:#fff;
+                            border:1px solid #99a; }
                   /* Something to scroll. Hybrid zoom scales a tall PAGE down to fit rather than clipping it, so a
                      long body would never scroll — an explicitly scrollable box is what the wheel can actually move,
                      and the colour bands make the movement visible in pixels rather than only in the engine. */
@@ -148,6 +153,11 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                        from matches before anything is clicked, which is how the first version of this test passed
                        while proving nothing. -->
                   <a class="inside" href="/second.html">onwards</a>
+                  <!-- Somewhere to type. Until CupriFace 0.12.0 a plain L2 document had nowhere to put a keystroke
+                       at all — an <input> in ordinary markup was not focusable and DispatchKey answered false for
+                       everything — so the client's key path existed and could not be exercised. A cupri-textfield
+                       takes focus from a click and reports a caret, which is what an input method attaches to. -->
+                  <cupri-textfield class="typing" value="{{ typed }}" placeholder="type here"></cupri-textfield>
                   <p class="value">{{ value }}</p>
                   <p><a href="cuprinet://intone/nowhere">a link to nowhere</a></p>
                   <div class="hand">a region that asks for a pointer cursor</div>
