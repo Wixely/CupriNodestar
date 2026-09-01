@@ -58,7 +58,7 @@ RUN dotnet publish node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release -o
 
 # ---- runtime ----
 # aspnet, not runtime: the web front is Kestrel, so the ASP.NET Core shared framework has to be present.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-base
 LABEL org.opencontainers.image.title="Nodestar"
 LABEL org.opencontainers.image.description="A CupriNet node that hosts a site on L2, served over HTTP (Mode 2)."
 LABEL org.opencontainers.image.source="https://github.com/Wixely/CupriNodestar"
@@ -106,10 +106,10 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 
 # ---- what this image deliberately does NOT do ----
 #
-# BUILD a browser client. The wasm bundle is a build output, not a source file, so a fresh clone does not have one,
-# and producing it here would mean a first stage carrying the wasm workload and Emscripten — a very large image for a
-# step most deployments do not need. Mounting a bundle at /client is the answer instead, and it has the better
-# property anyway: the client stays swappable, and this image never carries a renderer it was not asked to run.
+# BUILD a browser client. The wasm bundle is a build output, not a source file, and producing it here would mean a
+# first stage carrying the wasm workload and Emscripten — a very large image for a step most deployments do not
+# need. `--target mode1` UNPACKS one instead, from the published client package: the wasm was compiled once, when
+# that package was built. Mounting a bundle at /client still works and keeps the client swappable.
 #
 # ---- what the first build actually proved ----
 #
@@ -176,3 +176,52 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 # ClientRoot, and a real browser completing dial → DataChannel → Pilgrimage → Oracle → paint. What that leaves
 # unproven here is the container specifically: the bind mount, the `app` user's read access to it, and inbound UDP
 # reaching the container at all.
+
+# ---------------------------------------------------------------------------------------------------------------
+# The browser client, unpacked from its published package.
+#
+# NO EMSCRIPTEN HERE, and that is the point. The wasm was compiled once, when the client package was published; an
+# image that rebuilt it would carry a toolchain an order of magnitude larger than the thing it produces. This is
+# also why the host does not simply reference the package and call ServeCupriFaceClient(): that would pull
+# CupriFace into the server-side graph, which `cupriface-boundary` exists to prevent. The bundle arrives as FILES,
+# which is what ClientRoot has always taken.
+# ---------------------------------------------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS client
+
+# Which published client to ship. Pinned rather than floated: a rebuild of the same Dockerfile should produce the
+# same image, and `0.1.0-*` would quietly stop doing that the next time anything is published.
+ARG CLIENT_VERSION=0.1.0-alpha.9
+
+WORKDIR /src
+
+# The whole context, as the build stage above takes it. A narrower COPY would have to name `offline-packages/`
+# optionally, and a COPY whose wildcard matches nothing fails the build — which would break precisely the case
+# that has no offline packages, which is CI.
+COPY . .
+
+# Same bargain as the main restore above: an `offline-packages/` directory in the context wins and the network is
+# never consulted; otherwise the feed, with the token as a build secret.
+RUN --mount=type=secret,id=packages_token     sh -c 'if [ -d /src/offline-packages ] && ls /src/offline-packages/*.nupkg >/dev/null 2>&1; then         echo "Restoring the client offline from /src/offline-packages";         dotnet restore tools/client-extract/ClientExtract.csproj -p:ClientVersion="$CLIENT_VERSION" --source /src/offline-packages;       else         TOKEN="$(cat /run/secrets/packages_token 2>/dev/null || true)";         if [ -n "$TOKEN" ]; then           dotnet nuget update source GitHub-Wixely-Packages --username docker --password "$TOKEN"             --store-password-in-clear-text --configfile nuget.config;         fi;         dotnet restore tools/client-extract/ClientExtract.csproj -p:ClientVersion="$CLIENT_VERSION";       fi'
+
+RUN dotnet run --project tools/client-extract/ClientExtract.csproj -p:ClientVersion="$CLIENT_VERSION" --no-restore -- /out
+
+# ---------------------------------------------------------------------------------------------------------------
+# Mode 1: the same node, shipping the browser client, so /_nodestar/app is served without mounting anything.
+#
+#   docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile .
+#
+# About 20 MB larger, almost all of it renderer. A visitor's browser makes the L2 visit itself over WebRTC and the
+# node is a peer rather than a server — which still needs the UDP port published and PublicHost set to an address
+# they can reach. Neither of those is this image's to arrange.
+# ---------------------------------------------------------------------------------------------------------------
+FROM runtime-base AS mode1
+COPY --from=client --chown=app:app /out/ /client/
+
+# ---------------------------------------------------------------------------------------------------------------
+# Mode 2 is the DEFAULT, and stays last so that `docker build` with no --target keeps producing it.
+#
+# It carries no renderer at all: the node fetches the site over L2 in-process and hands the browser HTML. That is
+# the deployment that works everywhere — behind a tunnel, over an onion, in a browser with no WebRTC — and it has
+# no business carrying 20 MB of wasm to do it. Mount a client at /client, or use --target mode1, for the other one.
+# ---------------------------------------------------------------------------------------------------------------
+FROM runtime-base AS runtime

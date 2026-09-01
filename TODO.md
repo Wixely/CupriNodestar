@@ -121,10 +121,24 @@ system, while this one is honest about what a clone actually gets today.
       appears only in a visitor's browser console, on their machine, while the node logs a healthy start.
 
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
-- [ ] **A Mode-1 image.** Needs the wasm bundle, which is a build output a fresh clone does not have. The intended
-      answer is restoring `CupriNet.Nodestar.Client.CupriFace` from the feed rather than carrying the Emscripten
-      toolchain in a build stage — which is why the bundle is embedded in a package at all. Blocked on publishing.
+- [x] **A Mode-1 image**, `--target mode1`. It unpacks the browser client from the published package rather than
+      compiling wasm, so no Emscripten runs and no bundle needs to be in the build context — the wasm was compiled
+      once, when the package was published. Unblocked by v0.1.0-alpha.9, which published that package for the first
+      time.
 
+      **It is not a package reference on the host, deliberately.** `ServeCupriFaceClient()` would be one line, and
+      it would pull CupriFace into the server-side graph that `cupriface-boundary` exists to protect. The bundle
+      arrives the way `ClientRoot` has always taken one: as files. `tools/client-extract` writes the embedded
+      resources out, and lives under `tools/` rather than beside the host because for one build it sat inside
+      `node/cuprinet-nodestar/`, whose csproj globs `**/*.cs` — so the host picked up a second file with top-level
+      statements and stopped compiling.
+
+      **Verified by running it:** `/_nodestar/app` answers 200, and `dotnet.native.wasm` comes back as
+      `Content-Type: application/wasm` — the header that, served as octet-stream, stops a browser
+      stream-instantiating the module and breaks a working bundle at deploy time with no obvious cause.
+
+      Mode 2 stays the DEFAULT target, checked rather than assumed: the default image has 0 files in `/client` and
+      logs that it is serving no client; the mode1 image has 10. 350 MB against 374 MB.
 ## Packaging
 
 - [x] **Packages publish to GitHub Packages on a tag.** `https://nuget.pkg.github.com/Wixely` — the same feed

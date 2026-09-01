@@ -47,8 +47,19 @@ asked rather than a delay.
 
 ## Mode 1
 
-Unzip a browser client bundle into `deploy/client` and the node also serves `/_nodestar/app`, where the browser
-makes the L2 visit itself over WebRTC instead of reading what the node fetched. See `deploy/client/README.md`.
+Two ways. **Unzip a browser client bundle into `deploy/client`** and the node serves `/_nodestar/app` — see
+`deploy/client/README.md`. Or **build the image that ships one**:
+
+```sh
+docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile -t cuprinet-nodestar:mode1 .
+```
+
+That unpacks the published client package rather than compiling wasm, so it needs no Emscripten and no bundle in
+the build context — about 24 MB larger than the default image, almost all of it renderer. Pin which client with
+`--build-arg CLIENT_VERSION=0.1.0-alpha.9`.
+
+The default image deliberately carries no client: a deployment behind a tunnel or an onion cannot use Mode 1 at all
+and should not haul a renderer around to not use it.
 
 Both UDP and TCP on the overlay port are published, because WebRTC is UDP — with only the TCP half published the
 dial fails and nothing says why.

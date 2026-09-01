@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unpacks the reference browser client out of its package so a Mode-1 image can ship it as files.
+
+    WHY THIS EXISTS RATHER THAN A PACKAGE REFERENCE ON THE HOST. `CupriNet.Nodestar.Client.CupriFace` embeds the
+    wasm bundle and can serve it directly with `ServeCupriFaceClient()` — but referencing it from the host would
+    pull CupriFace into the SERVER-SIDE graph, which the `cupriface-boundary` CI job exists to prevent. A site
+    served over Tor or a Cloudflare tunnel ships no renderer, and that is a property worth keeping. So the bundle
+    arrives the way the host already accepts one: as files in `ClientRoot`.
+
+    DELIBERATELY NOT IN Nodestar.slnx, and deliberately under tools/ rather than beside the host. It is a build
+    tool for the image, not part of the product, and the boundary job restores four named projects — this is not
+    one of them and must never become one.
+
+    It lived under node/cuprinet-nodestar/ for one build. That project globs **/*.cs, so the host picked this
+    Program.cs up and stopped compiling: "only one compilation unit can have top-level statements". A tool that
+    breaks the thing it exists to package is worse than no tool.
+
+    It also means the image needs no Emscripten: the wasm was compiled once, when the package was published.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>client-extract</AssemblyName>
+    <RootNamespace>ClientExtract</RootNamespace>
+
+    <!-- Version of the CLIENT PACKAGE to unpack, passed by the Dockerfile. Defaults to the newest release rather
+         than to a floating range: an image should say which client it shipped, and `0.1.0-*` would silently
+         change what a rebuild produces. -->
+    <ClientVersion Condition="'$(ClientVersion)' == ''">0.1.0-alpha.9</ClientVersion>
+
+    <!-- This tool is not the product and takes no part in its versioning. -->
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CupriNet.Nodestar.Client.CupriFace" Version="$(ClientVersion)" />
+  </ItemGroup>
+
+</Project>
