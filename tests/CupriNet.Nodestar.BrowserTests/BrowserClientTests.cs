@@ -620,6 +620,108 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// A picture in a site actually reaching the canvas.
+    ///
+    /// <para><b>The element is <c>&lt;cupri-image&gt;</c>.</b> A plain <c>&lt;img&gt;</c> renders nothing whatever
+    /// its source — measured against the host with a valid PNG in every form — which is worth writing down here
+    /// because the symptom is a page that lays out correctly with a blank space where the picture goes, and
+    /// nothing anywhere says why.</para>
+    ///
+    /// <para><b>Inline, and that is not a shortcut.</b> This client fetches one document over the conduit and has
+    /// no sub-resource path at all, and wasm has no filesystem behind a relative path either, so a relative
+    /// <c>src</c> has nothing to resolve to. Inline is the form a site on this network can rely on, so it is the
+    /// form the gate holds.</para>
+    ///
+    /// <para><b>Asserted by COLOUR rather than by the canvas changing.</b> The image is magenta and nothing else in
+    /// the fixture's palette is anywhere near it, so finding that colour is finding this image — where "the canvas
+    /// changed after we navigated" would pass on the strength of the heading, the video, or the background.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_picture_in_the_site_is_painted()
+    {
+        _diagnosticsName = "image";
+        await ExpectLogAsync("painted");
+
+        Assert.True(await ReachTheSecondPageAsync(_page!),
+            Diagnosis("never reached the site's second page, so the image was never laid out"));
+
+        // Polled: the page arriving and the image being on the canvas are different moments, and on a remote
+        // source they would be further apart still.
+        var found = false;
+        string sample = "";
+        for (var poll = 0; poll < 30 && !found; poll++)
+        {
+            await Task.Delay(150);
+            sample = await _page!.EvaluateAsync<string>(MagentaProbe);
+            found = sample.StartsWith("found", StringComparison.Ordinal);
+        }
+
+        Assert.True(found,
+            Diagnosis($"the site's picture never reached the canvas ({sample}). Either <cupri-image> did not "
+                      + "resolve its inline source, or the frame that would have shown it was never asked for."));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// Sweeps the canvas for the second page's link and follows it. Shared, because reaching that page is the
+    /// preamble to every test of something that only exists there, and the fiddly part is aiming: the link's
+    /// position depends on the zoom the page was fitted at, so it is found by cursor rather than by coordinate.
+    /// </summary>
+    private async Task<bool> ReachTheSecondPageAsync(IPage page)
+    {
+        var box = await ViewportAsync();
+
+        for (var row = 0; row < 10; row++)
+        {
+            for (var col = 0; col < 10; col++)
+            {
+                var x = (float)(box.X + box.Width * (col + 0.5) / 10);
+                var y = (float)(box.Y + box.Height * (row + 0.5) / 10);
+
+                await page.Mouse.MoveAsync(x, y);
+                await Task.Delay(30);
+                if (await page.EvalOnSelectorAsync<string>("#viewport", "e => e.style.cursor || ''") != "pointer")
+                    continue;
+
+                await page.Mouse.ClickAsync(x, y);
+                if (await ArrivedOnAsync(page, 5)) return true;
+            }
+        }
+
+        // One last, longer wait: following a link is not synchronous with the click, and a sweep can move on
+        // several cells before the page it asked for appears.
+        return await ArrivedOnAsync(page, 30);
+    }
+
+    /// <summary>
+    /// Looks for the image's colour on the canvas, and says what it found when it fails. Sampled on a coarse grid
+    /// rather than pixel by pixel — a 120px block cannot hide between the samples, and reading the whole surface
+    /// back across the bridge for every poll is slow enough to change what it is measuring.
+    /// </summary>
+    private const string MagentaProbe = """
+        () => {
+          const c = document.getElementById('viewport');
+          if (!c) return 'no canvas';
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          const w = c.width, h = c.height;
+          if (!w || !h) return 'canvas has no size';
+
+          let best = 'nothing close', bestScore = -1;
+          for (let y = 2; y < h; y += 8) {
+            const row = ctx.getImageData(0, y, w, 1).data;
+            for (let x = 0; x < w; x += 8) {
+              const r = row[x * 4], g = row[x * 4 + 1], b = row[x * 4 + 2];
+              if (r > 200 && g < 60 && b > 200) return 'found ' + r + ',' + g + ',' + b + ' at ' + x + ',' + y;
+              const score = r + b - g * 2;
+              if (score > bestScore) { bestScore = score; best = 'closest was ' + r + ',' + g + ',' + b; }
+            }
+          }
+          return best;
+        }
+        """;
+
+    /// <summary>
     /// A video in a site, decoded by the browser and underlaid beneath the document.
     ///
     /// <para><b>The engine does not decode.</b> It lays the video out, punches a TRANSPARENT HOLE in the frame

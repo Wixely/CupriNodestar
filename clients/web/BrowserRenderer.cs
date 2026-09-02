@@ -221,6 +221,12 @@ internal static partial class BrowserRenderer
         var height = CanvasHeight();
         if (width <= 0 || height <= 0) return;
 
+        // AN IMAGE THAT ARRIVED LATE, which nothing else here would notice. A remote image is fetched by the engine
+        // asynchronously, so it lands some frames after the layout that asked for it — and the document is not
+        // dirty when it does. Without this the picture appears only if something else happens to repaint, which on
+        // a quiet page is never. Measured: the signal fires exactly once per fetch that completes.
+        if (WebHostCore.Document.ConsumeImageArrived()) WebHostCore.MarkDirty();
+
         if (!WebHostCore.Tick(width, height, seconds * 1000.0)) return;
 
         if (!_painted)

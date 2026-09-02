@@ -595,6 +595,47 @@ system, while this one is honest about what a clone actually gets today.
       the gate does not press them. Fullscreen is wired both ways and unasserted, because Playwright cannot grant
       the gesture a `requestFullscreen` needs. That is a gap in the tests, not a claim about the feature.
 
+- [x] **A site can carry a picture, and the element is `<cupri-image>`.** A plain `<img>` renders NOTHING — not
+      with an inline `data:` URI, not from a file, not from a URL. It lays out and leaves a blank space where the
+      picture goes, and nothing anywhere says why. `<cupri-image>` with the same source paints.
+
+      **This entry exists mostly to record how the first answer was wrong**, because the wrong answer was
+      convincing. A probe reported that no image form rendered at all, with controls proving it could see a 64x64
+      block of colour and even distinguish its colour — which made "images are unsupported" look measured rather
+      than assumed. Two mistakes underneath it: the base64 PNG had been hand-written and was TRUNCATED (valid
+      signature, valid IHDR, no IEND), and every source form was being tested behind an `<img>`. With a real PNG
+      from ffmpeg and the right tag, `data:`, `file:`, an absolute path and a relative one all paint.
+
+      **What the client had to fix is one line, and it is real.** `CupriDocument.ConsumeImageArrived()` exists to
+      say a fetch landed, and nothing here had ever called it. A remote image is fetched asynchronously and lands
+      some frames after the layout that asked for it, with the document not dirty when it does — so without this
+      the picture appears only if something else happens to repaint, which on a quiet page is never. Measured: the
+      signal fires exactly once per fetch that completes, including one that fails. Same shape as the zoom's
+      missing `MarkDirty`.
+
+      **Inline is the only form a site on this network can rely on**, and that is the client's limit rather than
+      the engine's. This client fetches one document over the conduit and has no sub-resource path at all, and
+      wasm has no filesystem behind a relative path either — so the `file:` and relative rows above cannot carry
+      over. Remote `https` should work subject to CORS; `CupriSourceOptions` defaults to `RequireHttps = true`,
+      which is the right default and is left alone.
+
+      **Routing sub-resources over the conduit would need an upstream hook.** `CupriSourceOptions` carries only
+      policy — `AllowedHosts`, `RequireHttps`, `MaxBytes`, `Timeout`, `FollowRedirects` — and `CupriSource` fetches
+      with its own `HttpClient`. There is no delegate to supply a fetcher, so a site's relative `src` cannot be
+      answered from the connection that delivered the page. Worth raising if inline stops being enough; it would
+      lift images and video together.
+
+      Gate-tested by colour: the fixture's picture is MAGENTA, which nothing else in its palette is anywhere near,
+      so finding that colour on the canvas is finding this image and cannot be finding the heading, the video or
+      the background. Two mutations, both killed: the same source behind a plain `<img>`, and the PNG truncated
+      the way the first probe's was.
+
+      **The `ConsumeImageArrived` wiring itself is carried and NOT asserted.** The gate's image is inline and
+      therefore resolved synchronously, so the late-arrival path never runs; covering it needs a remote image, and
+      a remote image needs HTTPS, which the gate's own node does not speak. An HTTPS fixture with a certificate
+      Chromium trusts is the only way to close that, and it is not worth it for one line. The evidence that the
+      line is right is the desktop measurement, not the gate.
+
 - [~] **Stage 1 of the host adoption: the paint path now runs through CupriFace's browser host.** `BrowserRenderer`
       stopped rendering — no Skia surface, no hand-applied zoom, no premultiplied-to-straight readback, no blit. It
       drives `WebHostCore.Init` and `WebHostCore.Tick` and adapts this client's input to them; `CupriFaceBridge`

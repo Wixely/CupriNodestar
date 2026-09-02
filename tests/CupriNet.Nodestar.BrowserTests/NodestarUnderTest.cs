@@ -104,6 +104,9 @@ public sealed class NodestarUnderTest : IAsyncLifetime
                          opened on a document the engine built AFTER the client re-Inited, which is the case a
                          video that only ever worked on the first page would hide. */
                       cupri-video { display:block; width:320px; height:180px; margin-top:16px; }
+                      /* Sized in CSS rather than left to the file's own 48x48, so the gate is looking for a
+                         block of colour big enough to survive whatever zoom this page is fitted at. */
+                      cupri-image { display:block; width:120px; height:120px; }
                     </style>
                     </head><body>
                       <h1>arrived elsewhere</h1>
@@ -115,6 +118,15 @@ public sealed class NodestarUnderTest : IAsyncLifetime
 
                            Two seconds of flat red at 64x48, which is the smallest thing ffmpeg would produce that
                            a browser will still decode. Nothing about the test depends on what it shows. -->
+                      <!-- MAGENTA, which appears nowhere else in this fixture's palette — so finding that colour
+                           on the canvas is finding this image and cannot be finding anything else. The element is
+                           <cupri-image>; a plain <img> renders nothing whatever its source, which cost an hour of
+                           believing images were unsupported.
+
+                           Inline for the same reason the video is: this client fetches one document over the
+                           conduit and has no sub-resource path, and wasm has no filesystem behind a relative
+                           path either. Inline is the only form a site on this network can rely on. -->
+                      <cupri-image src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAQElEQVR4nO3OQQ0AIAwAsfn3DJkLjkeTCujcOV+ZfCAkJCRUD4SEhITqgZCQkFA9EBISEqoHQkJCQvVASEjosQWfdtQAAxvsSgAAAABJRU5ErkJggg=="></cupri-image>
                       <cupri-video controls muted src="data:video/webm;base64,GkXfowEAAAAAAAAfQoaBAUL3gQFC8oEEQvOBCEKChHdlYm1Ch4ECQoWBAhhTgGcBAAAAAAAEaxFNm3RAO027i1OrhBVJqWZTrIHlTbuMU6uEFlSua1OsggEjTbuMU6uEElTDZ1OsggFqTbuMU6uEHFO7a1OsggRO7AEAAAAAAACbAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmAQAAAAAAADIq17GDD0JATYCNTGF2ZjU4LjE3LjEwMVdBjUxhdmY1OC4xNy4xMDFEiYhAn0AAAAAAABZUrmsBAAAAAAAAO64BAAAAAAAAMteBAXPFgQGcgQAitZyDdW5khoVWX1ZQOIOBASPjg4QF9eEA4AEAAAAAAAAGsIFAuoEwElTDZwEAAAAAAAC/c3MBAAAAAAAALmPAAQAAAAAAAABnyAEAAAAAAAAaRaOHRU5DT0RFUkSHjUxhdmY1OC4xNy4xMDFzcwEAAAAAAAA5Y8ABAAAAAAAABGPFgQFnyAEAAAAAAAAhRaOHRU5DT0RFUkSHlExhdmM1OC4yMS4xMDQgbGlidnB4c3MBAAAAAAAAOmPAAQAAAAAAAARjxYEBZ8gBAAAAAAAAIkWjiERVUkFUSU9ORIeUMDA6MDA6MDIuMDAwMDAwMDAwAAAfQ7Z1AQAAAAAAAg3ngQCjwoEAAICQAwCdASpAADAAAEcIhYWIhYSIAgICdaoD+AP6Agc7eeLPMx5eAP79bvP/45k3MMT/jm3/8WE8DijI//FRAKOWgQBkANEBAAEQEAAYABhYL/QACIwAAKOWgQDIANEBAAEQEAAYABhYL/QACIwAAKOWgQEsANEBAAEQEAAYABhYL/QACIwAAKOWgQGQANEBAAEQEAAYABhYL/QACIwAAKOWgQH0ANEBAAEQEAAYABhYL/QACIwAAKOWgQJYANEBAAEQEAAYABhYL/QACIwAAKOVgQK8ALEBAAEQEBRgAGFgv9AAIjAAo5aBAyAA0QEAARAQABgAGFgv9AAIjAAAo5aBA4QA0QEAARAQABgAGFgv9AAIjAAAo5aBA+gA0QEAARAQABgAGFgv9AAIjAAAo5aBBEwA0QEAARAQABgAGFgv9AAIjAAAo5aBBLAA0QEAARAQABgAGFgv9AAIjAAAo5aBBRQA0QEAARAQABgAGFgv9AAIjAAAo5aBBXgA0QEAARAQABgAGFgv9AAIjAAAo5aBBdwA0QEAARAQABgAGFgv9AAIjAAAo5aBBkAA0QEAARAQABgAGFgv9AAIjAAAo5aBBqQA0QEAARAQABgAGFgv9AAIjAAAo5WBBwgAsQEAARAQFGAAYWC/0AAiMACjloEHbADRAQABEBAAGAAYWC/0AAiMAAAcU7trAQAAAAAAABG7j7OBALeK94EB8YICNfCBAw=="></cupri-video>
                     </body></html>
                     """),
