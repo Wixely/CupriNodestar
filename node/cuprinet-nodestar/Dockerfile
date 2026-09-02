@@ -190,7 +190,7 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS client
 
 # Which published client to ship. Pinned rather than floated: a rebuild of the same Dockerfile should produce the
 # same image, and `0.1.0-*` would quietly stop doing that the next time anything is published.
-ARG CLIENT_VERSION=0.1.0-alpha.10
+ARG CLIENT_VERSION=0.1.0-alpha.11
 
 WORKDIR /src
 
