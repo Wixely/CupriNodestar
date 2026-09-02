@@ -16,6 +16,15 @@ public sealed class NodestarOptions
     /// <summary>The network (Concordium) this node joins. Nodes only ever see peers on the same one.</summary>
     public string Concordium { get; set; } = "cuprinet";
 
+    /// <summary>
+    /// The Wards: the bounds and deadlines that stop one visitor taking this node off the air.
+    ///
+    /// <para>Every one is unset by default and CupriNet's own choice applies. See <see cref="NodestarWards"/> for
+    /// what each does, what CupriNet 0.6.2 chose, and why leaving them unset is not the same as copying those
+    /// numbers here.</para>
+    /// </summary>
+    public NodestarWards Wards { get; } = new();
+
     /// <summary>A self-asserted display name, carried unverified in the link. Peers trust it only via the fingerprint.</summary>
     public string? Moniker { get; set; }
 

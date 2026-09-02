@@ -120,6 +120,39 @@ system, while this one is honest about what a clone actually gets today.
       Startup now prints what a browser will dial, and warns when the answer is nothing — the failure otherwise
       appears only in a visitor's browser console, on their machine, while the node logs a healthy start.
 
+- [x] **The Wards are configurable.** CupriNet's security review found that one address could complete every
+      available handshake, then go quiet, and hold every visit slot for as long as it liked — total unavailability
+      for the cost of that many Toll solves. `PilgrimageIdleTimeout` and `MaxPilgrimagesPerAddress` were the answer,
+      alongside the overlay's existing caps. **A Nodestar forwarded none of them**: `CupriNodeOptions` is built
+      internally with a fixed list, so every Ward took CupriNet's default and no operator could change one from
+      configuration or even from code.
+
+      Eleven are now on `NodestarOptions.Wards`, bound from `Nodestar:Wards:*` and `CUPRINET_NODESTAR_Wards__*`.
+
+      **Every one is nullable and an unset Ward is never written**, which is the whole design rather than a
+      convenience. Copying CupriNet's current numbers into this repository would freeze them, so a release that
+      lowered a limit *because it turned out to be exploitable* would be silently overridden by our stale copy.
+      Same shape as the beacon bug: the difference between "nothing" and "nothing, deliberately".
+
+      `CupriNodeOptions` is a record with init-only properties, so applying a Ward is a `with` expression — which
+      turns out to be exactly the right tool, since a Ward nobody set is never named and keeps whatever upstream
+      gave it.
+
+      **The test that mattered was the one that did not work.** `Setting_nothing_leaves_every_ward_as_CupriNet_chose_it`
+      compared against a freshly constructed `CupriNodeOptions`, and a mutation run showed it passing against
+      `?? 8` hardcoded in our source — the precise mistake the design exists to prevent — because 8 is what
+      CupriNet chooses today. It would have started failing only once CupriNet moved that number, which is when
+      nobody is looking. It now starts from values no default could match. Four mutations, all killed: a frozen
+      default, a Ward that binds and reaches nothing, a `with` built from a stale copy, and a Ward left out of the
+      startup report.
+
+      Binding is asserted through `IConfiguration` as well, because every forwarding test would pass with it
+      broken — `Wards` is a get-only property, which binds by having its properties filled in, and that is the
+      shape that silently binds nothing when it is wrong.
+
+      `MaxPageantsAsMember` is deliberately not exposed: it defaults to 0, so setting it appears to enable a
+      capability rather than fence one, and nothing here established what it costs.
+
 - [ ] **`deploy/` recipes** — IIS (`web.config` / ANCM), reverse proxy, Cloudflare tunnel, systemd, Windows service.
 - [x] **A Mode-1 image**, `--target mode1`. It unpacks the browser client from the published package rather than
       compiling wasm, so no Emscripten runs and no bundle needs to be in the build context — the wasm was compiled

@@ -39,6 +39,39 @@ warn: This node's link carries no clearnet address, so a browser has nothing to 
 Purely local use — a browser on the same machine as the node — needs none of this. The gateway is reached over
 whatever address you typed, and no beacon is involved.
 
+## The Wards
+
+The bounds and deadlines that stop one visitor taking the node off the air — a global visit cap, a per-address
+cap, an idle deadline, and the overlay's equivalents. They are CupriNet's, and a Nodestar now forwards them:
+
+```sh
+CUPRINET_NODESTAR_Wards__MaxPilgrimagesPerAddress=64
+CUPRINET_NODESTAR_Wards__PilgrimageIdleTimeout=00:30:00
+```
+
+or in `appsettings.json`:
+
+```json
+{ "Nodestar": { "Wards": { "MaxPilgrimagesPerAddress": 64, "PilgrimageIdleTimeout": "00:30:00" } } }
+```
+
+**Leave them alone unless something is actually wrong.** Every one is unset by default and CupriNet's own value
+applies, which is deliberate: a number pinned here would keep applying after CupriNet changed it, including after
+CupriNet changed it *because it turned out to be exploitable*. The node logs which ones you overrode at startup
+and says nothing when you overrode none.
+
+The one most likely to need changing is **`MaxPilgrimagesPerAddress`** (8 on CupriNet 0.6.2). It counts concurrent
+visits from one source address, which is the right defence for a public site and the wrong one when every visitor
+arrives from the same place — behind a corporate NAT, a CGNAT, or a reverse proxy that does not preserve the
+client address. There the ninth simultaneous visitor is turned away by a defence aimed at somebody else.
+
+**`PilgrimageIdleTimeout`** (5 minutes) does not do what its name suggests to a live feed: traffic in *either*
+direction keeps a visit alive, so a browser attending an Auspice and sending nothing is not idle. Raise it for
+visitors who genuinely sit still — a page left open in a tab — not for feeds.
+
+`Wards:EnableToll=false` removes the cost of arriving, which is what makes every other bound expensive to
+exhaust. The node warns when you do it.
+
 ## Your site
 
 Anything in `deploy/site` is served as the site, and edits are live: the next request gets the new file, with no

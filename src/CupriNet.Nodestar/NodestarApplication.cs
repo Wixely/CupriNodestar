@@ -115,7 +115,7 @@ public sealed class NodestarApplication : IAsyncDisposable
         // path. The two are mutually exclusive by nature, not by policy.
         _webRtc = _transportFactory?.Invoke(_options, message => _log.LogInformation("{Message}", message));
 
-        _node = await CupriNode.CreateAsync(new CupriNodeOptions
+        var nodeOptions = new CupriNodeOptions
         {
             Concordium = _options.Concordium,
             ListenAddress = ParseAddress(_options.ListenAddress),
@@ -144,7 +144,16 @@ public sealed class NodestarApplication : IAsyncDisposable
             EnablePortMapping = !onionOnly && _options.EnablePortMapping,
             EnableFerryman = !onionOnly && _options.EnableFerryman,
             Power = PowerProfile.Unmetered,
-        }, cancellationToken).ConfigureAwait(false);
+        };
+
+        // The Wards are applied AFTER the initializer above, not inside it, and that is not a style choice: an
+        // unset Ward must leave CupriNet's own value untouched, and an object initializer has no way to express
+        // "do not assign this one". Writing `MaxPilgrimagesPerAddress = _options.Wards.MaxPilgrimagesPerAddress ?? 8`
+        // would put the 8 in OUR source, where a CupriNet release that changed it could no longer reach.
+        nodeOptions = ApplyWards(_options.Wards, nodeOptions);
+        ReportWardsInForce(_options.Wards);
+
+        _node = await CupriNode.CreateAsync(nodeOptions, cancellationToken).ConfigureAwait(false);
 
         // The Signet is the site's identity and its URL at once. It is persisted under a name, so the address is
         // stable across restarts and redeploys as long as the data directory is.
@@ -406,6 +415,81 @@ public sealed class NodestarApplication : IAsyncDisposable
     /// the empty list and the absent one looked identical. That is why the test below asserts the SHAPE of the
     /// answer rather than what some machine happens to advertise.</para>
     /// </summary>
+    /// <summary>
+    /// Writes the Wards an operator set onto the node's options, and touches nothing else.
+    ///
+    /// <para><b>Only what was set is written.</b> Each Ward is nullable and an unset one is skipped entirely, so
+    /// CupriNet's own default survives — including a default that a later CupriNet release changes. The
+    /// alternative, defaulting each one in this repository, would freeze a security limit at whatever it happened
+    /// to be when this was written and silently override an upstream fix. That is the same shape as the beacon
+    /// bug below, where an empty list suppressed the node's own discovery: the difference between "nothing" and
+    /// "nothing, deliberately" is the whole of it.</para>
+    ///
+    /// <para><b>Nothing is validated here.</b> A nonsensical value is CupriNet's to refuse, and refusing it twice
+    /// with two different messages helps nobody — while a bound this repository thinks is unreasonable may be
+    /// exactly right for a deployment nobody here imagined.</para>
+    /// </summary>
+    internal static CupriNodeOptions ApplyWards(NodestarWards wards, CupriNodeOptions node)
+    {
+        // `with` rather than assignment because every Ward on CupriNodeOptions is init-only — and that turns out to
+        // be the right tool rather than a workaround. Each expression copies the whole record and overrides one
+        // property, so a Ward nobody set is never named and keeps whatever CupriNet gave it. Eleven copies at
+        // startup costs nothing.
+        if (wards.MaxConcurrentPilgrimages is { } pilgrimages) node = node with { MaxConcurrentPilgrimages = pilgrimages };
+        if (wards.MaxPilgrimagesPerAddress is { } perAddress) node = node with { MaxPilgrimagesPerAddress = perAddress };
+        if (wards.PilgrimageIdleTimeout is { } idle) node = node with { PilgrimageIdleTimeout = idle };
+
+        if (wards.MaxConcurrentControlConnections is { } control) node = node with { MaxConcurrentControlConnections = control };
+        if (wards.MaxControlConnectionsPerPeer is { } perPeer) node = node with { MaxControlConnectionsPerPeer = perPeer };
+        if (wards.MaxConcurrentHandshakes is { } handshakes) node = node with { MaxConcurrentHandshakes = handshakes };
+        if (wards.MaxControlRequestsPerWindow is { } requests) node = node with { MaxControlRequestsPerWindow = requests };
+        if (wards.MaxFerrymanReservations is { } ferryman) node = node with { MaxFerrymanReservations = ferryman };
+
+        if (wards.ConsecrationTimeout is { } consecration) node = node with { ConsecrationTimeout = consecration };
+        if (wards.CandidateConnectTimeout is { } candidate) node = node with { CandidateConnectTimeout = candidate };
+        if (wards.EnableToll is { } toll) node = node with { EnableToll = toll };
+
+        return node;
+    }
+
+    /// <summary>
+    /// Says which Wards an operator changed, at startup.
+    ///
+    /// <para>Silent when nothing was set, because a line naming eleven defaults on every start teaches nobody
+    /// anything. What it exists for is the opposite case: a node behaving oddly under load, where the first useful
+    /// question is whether somebody moved a limit — and answering that from a log is far quicker than reconstructing
+    /// which of appsettings, an environment variable and a command line won.</para>
+    /// </summary>
+    private void ReportWardsInForce(NodestarWards wards)
+    {
+        if (!wards.AnySet) return;
+
+        var changed = new List<string>();
+        void Note(string name, object? value) { if (value is not null) changed.Add($"{name}={value}"); }
+
+        Note(nameof(wards.MaxConcurrentPilgrimages), wards.MaxConcurrentPilgrimages);
+        Note(nameof(wards.MaxPilgrimagesPerAddress), wards.MaxPilgrimagesPerAddress);
+        Note(nameof(wards.PilgrimageIdleTimeout), wards.PilgrimageIdleTimeout);
+        Note(nameof(wards.MaxConcurrentControlConnections), wards.MaxConcurrentControlConnections);
+        Note(nameof(wards.MaxControlConnectionsPerPeer), wards.MaxControlConnectionsPerPeer);
+        Note(nameof(wards.MaxConcurrentHandshakes), wards.MaxConcurrentHandshakes);
+        Note(nameof(wards.MaxControlRequestsPerWindow), wards.MaxControlRequestsPerWindow);
+        Note(nameof(wards.MaxFerrymanReservations), wards.MaxFerrymanReservations);
+        Note(nameof(wards.ConsecrationTimeout), wards.ConsecrationTimeout);
+        Note(nameof(wards.CandidateConnectTimeout), wards.CandidateConnectTimeout);
+        Note(nameof(wards.EnableToll), wards.EnableToll);
+
+        _log.LogInformation("Wards overridden: {Wards}. Everything else is CupriNet's own default.",
+            string.Join(", ", changed));
+
+        // Worth a warning of its own rather than a line in the list above: it is the one setting here whose wrong
+        // value is a security decision. With no Toll, arriving costs an attacker nothing, which is what makes
+        // every other bound cheap to exhaust.
+        if (wards.EnableToll == false)
+            _log.LogWarning("The Toll is disabled, so arriving at this node is free. Every other Ward still holds, "
+                            + "but each one is now cheap to exhaust.");
+    }
+
     internal static IReadOnlyList<Beacon>? DeclaredBeacons(NodestarOptions options)
     {
         var beacons = new List<Beacon>();
