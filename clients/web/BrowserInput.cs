@@ -74,6 +74,11 @@ internal static unsafe partial class BrowserInput
     private const int VideoTime = 23;
     private const int VideoEnded = 24;
 
+    // The visitor deciding the text is too small, which is a preference rather than anything the fit could get
+    // right. `i0` carries the direction and `i1` whether there is a point to zoom about — a wheel has one, a
+    // keystroke does not.
+    private const int Zoom = 25;
+
     /// <summary>Reused across frames: this runs at display rate, and a fresh array per frame is pure garbage.</summary>
     private static readonly byte[] Buffer = new byte[MaxInputBytes];
 
@@ -176,6 +181,8 @@ internal static unsafe partial class BrowserInput
                 case VideoPlayState: BrowserRenderer.VideoPlayState(i0, i1 != 0); break;
                 case VideoTime: BrowserRenderer.VideoTime(i0, x); break;
                 case VideoEnded: BrowserRenderer.VideoEnded(i0); break;
+
+                case Zoom: BrowserRenderer.Zoom(i0, i1 != 0, x, y); break;
             }
 
             // The text is NUL-terminated on the wire and the whole record is padded to four bytes, which is what

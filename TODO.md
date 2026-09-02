@@ -309,12 +309,42 @@ system, while this one is honest about what a clone actually gets today.
 
       Recorded because the entry claimed otherwise for several versions. A note that something is broken is worth
       re-testing on a bump; carrying one that has quietly become false is how a workaround outlives its reason.
-- [~] **Scrolling works within a page; a whole page still scales rather than scrolls.** The wheel now reaches the
-      document, so a scrollable region moves and repaints — verified in Chromium. What hybrid zoom still does is
-      scale a tall PAGE down to fit rather than letting it scroll, so a page far taller than the viewport shrinks
-      until it is unreadable. A site can now declare its design size, which is the honest fix for a page that knows
-      its own shape — what remains is what to do with one that does not say, which is a policy question rather than
-      a missing capability.
+- [x] **A long page scrolls rather than shrinking, and the visitor can zoom.** The fit used to take both axes, so a
+      page twice the viewport's height rendered at half size and a genuinely long one shrank until it was
+      unreadable — with the whole of it present, complete, and too small to use. Nothing was ever clipped, which is
+      why it read as a design decision rather than a defect.
+
+      **Three probes, and the middle one changed the plan.** Fitting the width alone was the obvious fix and would
+      have been WORSE on its own: measured against the host, a plain body does not move on a wheel however far its
+      content runs past the viewport. So a width-only fit would have replaced a page too small to read with one
+      whose bottom half could not be reached at all.
+
+      **What made it safe is that the engine takes a rule from the client and lets the site overrule it.** The
+      third probe put `html, body { height:100%; overflow:auto }` on `CupriApp.Css` and wheeled a long page:
+      it scrolls; the same page declaring `overflow:hidden` on its body does not; without the client rule nothing
+      scrolls at all. So this is a DEFAULT rather than a policy — a site managing its own overflow is untouched,
+      and a client stylesheet a site could not override would not have been worth having.
+
+      **User zoom is a third thing again**, and it composes rather than competes: the device pixel ratio makes a
+      glyph the right physical size, the fit sizes a page to the window's width, and this is the visitor deciding
+      the text is too small — which no amount of correct fitting can answer, because it is a preference rather than
+      a measurement. `PageZoomEnabled` is off by default and nothing here had ever turned it on. Ctrl+wheel zooms
+      about the pointer (the anchored `ZoomIn(x, y)` overload), Ctrl+plus/minus step, Ctrl+0 resets.
+
+      **`MarkDirty` after a zoom is not optional**, and the first measurement of this was wrong for want of it: the
+      engine records the new zoom without asking for a frame, so the property moved while the picture did not, and
+      that is indistinguishable from a feature that does not work. It is a mutation the gate now kills.
+
+      Gate-tested twice. The scroll test is AIMED at the heading rather than swept, because the fixture carries an
+      explicitly scrollable box and a sweep would have passed on the strength of that region moving while saying
+      nothing about the page. The zoom test asserts that Ctrl+0 returns the canvas to EXACTLY the fingerprint it
+      started with — zooming in changes the picture, which many unrelated bugs would also do, but coming back to
+      the same bytes is something only a real zoom that really reset can produce. Five mutations, all killed: no
+      scroll root, the old both-axes fit, a zoom with no repaint, `PageZoomEnabled` left false, and Ctrl+plus
+      treated as an ordinary keystroke.
+
+      Not covered: Ctrl+wheel's anchoring. The gate presses the keyboard chords, which are unanchored, so the
+      `ZoomIn(x, y)` overload is carried and never asserted.
 - [x] **Input reaches the document.** Pointer, wheel and keyboard are carried into CupriFace, so an L2 site can be
       clicked, scrolled and typed into rather than being a live picture. The cursor is driven from the document's own
       hit test, which is the only affordance a canvas-painted site has — without it a link is indistinguishable from

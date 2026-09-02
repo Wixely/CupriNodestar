@@ -512,6 +512,114 @@ public sealed class BrowserClientTests : IClassFixture<NodestarUnderTest>, IAsyn
     }
 
     /// <summary>
+    /// A page longer than the window SCROLLS rather than shrinking to fit.
+    ///
+    /// <para><b>What this replaces.</b> The client used to fit both axes, so a page twice the viewport's height
+    /// rendered at half size and a genuinely long one shrank until it was unreadable — with the whole of it
+    /// present, complete, and too small to use. Nothing was ever clipped, which is why it looked like a decision
+    /// rather than a defect.</para>
+    ///
+    /// <para><b>Aimed at the top-left corner, deliberately not swept.</b> The fixture carries an explicitly
+    /// scrollable box of colour bands, and a sweep finds it — so a swept version of this test would pass on the
+    /// strength of the region scrolling and say nothing about the page. The heading is at the top of the document
+    /// and the scroller is at the bottom of it, so a wheel up here can only be answered by the root.</para>
+    ///
+    /// <para>Which is a thing the root will only do if something asked it to: measured against the host, a plain
+    /// body does not move on a wheel however far its content runs past the viewport. <c>SiteApp.Css</c> is what
+    /// asks, and removing it fails this test.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_page_longer_than_the_window_scrolls()
+    {
+        _diagnosticsName = "page-scrolls";
+        await ExpectLogAsync("painted");
+
+        var before = await CanvasAsync();
+        var box = await ViewportAsync();
+
+        // Over the heading, which is the first thing in the document — and nowhere near the scrollable box, which
+        // is the last.
+        await _page!.Mouse.MoveAsync((float)(box.X + box.Width * 0.08), (float)(box.Y + box.Height * 0.06));
+
+        for (var notch = 0; notch < 8; notch++)
+        {
+            await _page.Mouse.WheelAsync(0, 120);
+            await Task.Delay(40);
+        }
+
+        var after = await CanvasAsync();
+        for (var poll = 0; poll < 10 && after.Fingerprint == before.Fingerprint; poll++)
+        {
+            await Task.Delay(150);
+            after = await CanvasAsync();
+        }
+
+        Assert.True(after.Fingerprint != before.Fingerprint,
+            Diagnosis("a wheel over the top of the page changed nothing. Either the fit is still squeezing the "
+                      + "whole page into the window so there is nothing to scroll, or the document has no "
+                      + "scrollable root for the wheel to move."));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>
+    /// The visitor's own zoom, over and above whatever the fit decided.
+    ///
+    /// <para><b>Three different things are called zoom and they compose rather than compete.</b> The device pixel
+    /// ratio makes a glyph the right physical size; the fit sizes a page to the window's width; this is the
+    /// visitor deciding the text is too small, which no amount of correct fitting can answer because it is a
+    /// preference rather than a measurement. None of it was reachable before — the engine's own zoom exists, is
+    /// off by default, and nothing in this client had ever turned it on or called it.</para>
+    ///
+    /// <para><b>Reset is what makes this assertion strong.</b> Zooming in changes the canvas, which a great many
+    /// unrelated bugs would also do; returning to EXACTLY the fingerprint it started with is a thing only a real
+    /// zoom that really came back can produce.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_visitor_can_zoom_the_page()
+    {
+        _diagnosticsName = "zoom";
+        await ExpectLogAsync("painted");
+
+        var box = await ViewportAsync();
+
+        // The canvas has to hold focus for a keystroke to reach it, and this corner is the heading — inert, so the
+        // click that focuses cannot follow a link or land in a field on the way.
+        await _page!.Mouse.ClickAsync((float)(box.X + box.Width * 0.08), (float)(box.Y + box.Height * 0.06));
+        await Task.Delay(200);
+
+        var rest = await CanvasAsync();
+
+        await _page.Keyboard.PressAsync("Control+Equal");
+        var zoomed = await SettledCanvasAsync(c => c.Fingerprint != rest.Fingerprint);
+
+        Assert.True(zoomed.Fingerprint != rest.Fingerprint,
+            Diagnosis("Ctrl+plus changed nothing. Either the keystroke never reached the document, or the zoom "
+                      + "moved without anything asking for a frame — which looks identical from out here."));
+
+        await _page.Keyboard.PressAsync("Control+0");
+        var back = await SettledCanvasAsync(c => c.Fingerprint == rest.Fingerprint);
+
+        Assert.True(back.Fingerprint == rest.Fingerprint,
+            Diagnosis($"Ctrl+0 did not restore the page: it started at {rest.Fingerprint}, zoomed to "
+                      + $"{zoomed.Fingerprint}, and reset to {back.Fingerprint}."));
+
+        Assert.Empty(_pageErrors);
+    }
+
+    /// <summary>Polls the canvas until it satisfies <paramref name="settled"/>, then returns whatever it last saw.</summary>
+    private async Task<CanvasState> SettledCanvasAsync(Func<CanvasState, bool> settled, int polls = 20)
+    {
+        var state = await CanvasAsync();
+        for (var i = 0; i < polls && !settled(state); i++)
+        {
+            await Task.Delay(150);
+            state = await CanvasAsync();
+        }
+        return state;
+    }
+
+    /// <summary>
     /// A video in a site, decoded by the browser and underlaid beneath the document.
     ///
     /// <para><b>The engine does not decode.</b> It lays the video out, punches a TRANSPARENT HOLE in the frame

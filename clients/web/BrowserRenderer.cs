@@ -141,6 +141,11 @@ internal static partial class BrowserRenderer
         // would look exactly like links working and then quietly not.
         document.Navigated += OnNavigated;
 
+        // User zoom, which is a third thing again: not the fit that sizes a page to the window, and not scrolling.
+        // Off by default, and the client is the only thing that can turn it on — measured, ZoomIn and ZoomOut move
+        // the document's Zoom and repaint once something asks for a frame.
+        document.PageZoomEnabled = true;
+
         var assembly = typeof(BrowserRenderer).Assembly;
         foreach (var name in new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" })
         {
@@ -382,6 +387,35 @@ internal static partial class BrowserRenderer
     {
         if (!Ready || string.IsNullOrEmpty(text)) return;
         WebHostCore.KeyChar(text);
+    }
+
+    /// <summary>
+    /// The visitor's own zoom, which the fit knows nothing about.
+    ///
+    /// <para><b>Three different things are called zoom here and they compose rather than compete.</b> The DEVICE
+    /// pixel ratio makes a glyph the right physical size. The FIT sizes a page to the window's width, and belongs
+    /// to <see cref="SiteApp.Present"/>. This is the third: the visitor deciding the text is too small, which no
+    /// amount of correct fitting can answer because it is a preference rather than a measurement.</para>
+    ///
+    /// <para><paramref name="anchored"/> distinguishes Ctrl+wheel from Ctrl+plus. A wheel zoom keeps the point
+    /// under the pointer where it is, which is what makes zooming into a particular part of a page feel like
+    /// magnification rather than teleportation; a keyboard zoom has no such point and takes the document's own.</para>
+    ///
+    /// <para><c>MarkDirty</c> is not optional. The engine records the new zoom without asking for a frame, so
+    /// without this the property moves and the picture does not — which is indistinguishable from a feature that
+    /// does not work, and was measured to look exactly like one.</para>
+    /// </summary>
+    public static void Zoom(int direction, bool anchored, float x, float y)
+    {
+        if (!Ready) return;
+
+        var document = WebHostCore.Document;
+
+        if (direction == 0) document.ZoomReset();
+        else if (direction > 0) { if (anchored) document.ZoomIn(x, y); else document.ZoomIn(); }
+        else { if (anchored) document.ZoomOut(x, y); else document.ZoomOut(); }
+
+        WebHostCore.MarkDirty();
     }
 
     /// <summary>

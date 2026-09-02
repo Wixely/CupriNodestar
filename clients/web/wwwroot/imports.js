@@ -112,6 +112,15 @@ mergeInto(LibraryManager.library, {
           return;
         }
 
+
+        // Ctrl with plus, minus or zero. '+' arrives as '+' on some layouts and '=' on others, and both are the
+        // same key to the visitor; '0' is reset rather than a third step, which is the convention every browser
+        // already taught them. Unanchored: a keystroke has no point to zoom about.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          if (e.key === '+' || e.key === '=') { cupri.input.push({ k: 25, i0: 1 }); e.preventDefault(); return; }
+          if (e.key === '-' || e.key === '_') { cupri.input.push({ k: 25, i0: -1 }); e.preventDefault(); return; }
+          if (e.key === '0') { cupri.input.push({ k: 25, i0: 0 }); e.preventDefault(); return; }
+        }
         // Undo and redo reach the document from here too. This field has focus whenever a field in the site does,
         // so the canvas handler never sees these — and typing is exactly when they are wanted.
         if ((e.ctrlKey || e.metaKey) && !e.altKey) {
@@ -336,6 +345,16 @@ mergeInto(LibraryManager.library, {
       // still — the canvas fills the viewport, so that reads as the site ignoring the wheel entirely.
       c.addEventListener('wheel', function (e) {
         const p = cupri.at(e); if (!p) return;
+
+        // CTRL+WHEEL IS ZOOM, EVERYWHERE, and always has been — so a visitor who does it here expects the page to
+        // grow rather than to scroll six times as far. Anchored on the pointer, which is what makes zooming into
+        // one part of a page feel like magnification instead of a jump to somewhere else.
+        if (e.ctrlKey || e.metaKey) {
+          cupri.input.push({ k: 25, i0: e.deltaY < 0 ? 1 : -1, i1: 1, x: p.x, y: p.y });
+          e.preventDefault();
+          return;
+        }
+
         // deltaMode 1 is lines and 2 is pages; the document wants pixels either way.
         var scale = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 800 : 1);
         cupri.input.push({ k: 5, x: p.x, y: p.y, a: e.deltaY * scale, b: e.deltaX * scale });
@@ -366,6 +385,15 @@ mergeInto(LibraryManager.library, {
         // Ctrl+A is select-all inside the document rather than in the page around it.
         if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) { edit = 14; text = ''; }
 
+
+        // Ctrl with plus, minus or zero. '+' arrives as '+' on some layouts and '=' on others, and both are the
+        // same key to the visitor; '0' is reset rather than a third step, which is the convention every browser
+        // already taught them. Unanchored: a keystroke has no point to zoom about.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          if (e.key === '+' || e.key === '=') { cupri.input.push({ k: 25, i0: 1 }); e.preventDefault(); return; }
+          if (e.key === '-' || e.key === '_') { cupri.input.push({ k: 25, i0: -1 }); e.preventDefault(); return; }
+          if (e.key === '0') { cupri.input.push({ k: 25, i0: 0 }); e.preventDefault(); return; }
+        }
         // Undo and redo, which the engine keeps a history for and the browser knows nothing about. Both spellings
         // of redo are accepted because both are in use — Ctrl+Y on Windows, Ctrl+Shift+Z everywhere else.
         if ((e.ctrlKey || e.metaKey) && !e.altKey) {
