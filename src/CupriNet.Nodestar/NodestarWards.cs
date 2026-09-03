@@ -89,6 +89,16 @@ public sealed class NodestarWards
     public int? MaxControlRequestsPerWindow { get; set; }
 
     /// <summary>
+    /// How long that window is, in seconds. <c>10</c> on CupriNet 0.6.2.
+    ///
+    /// <para><b>It belongs with the count above and shipping one without the other was a mistake.</b> A rate limit
+    /// is the pair: raising the count alone does not lengthen the window, it raises the RATE — so an operator who
+    /// meant "allow a burst now and then" and set only the count has quietly doubled what a peer may sustain
+    /// forever. Both, or neither.</para>
+    /// </summary>
+    public int? ControlWindowSeconds { get; set; }
+
+    /// <summary>
     /// How many Ferryman reservations this node will hold for others. <c>1024</c> on CupriNet 0.6.2.
     ///
     /// <para>Relevant because a Nodestar is a Ferryman by default — see <see cref="NodestarOptions.EnableFerryman"/>
@@ -125,6 +135,30 @@ public sealed class NodestarWards
     /// </summary>
     public bool? EnableToll { get; set; }
 
+    /// <summary>
+    /// How hard the Toll this node MINTS is. <c>16</c> on CupriNet 0.6.2.
+    ///
+    /// <para>Exposed for the same reason <see cref="ControlWindowSeconds"/> is: <see cref="EnableToll"/> without
+    /// this is half a control. Whether arriving costs anything and how much it costs are the same decision, and an
+    /// operator able to answer only the first has not really been given it.</para>
+    /// </summary>
+    public int? TributeDifficulty { get; set; }
+
+    /// <summary>
+    /// How hard a Toll this node will ACCEPT. <c>16</c> on CupriNet 0.6.2.
+    ///
+    /// <para>The other half of the pair, and the two are not interchangeable: one is what this node asks of
+    /// arrivals, the other what it insists on from theirs. <b>Raising this above what peers mint turns them
+    /// away</b> — a fence around your own node rather than a defence of it — so move it knowing which side of the
+    /// exchange you are changing.</para>
+    /// </summary>
+    public int? RequiredTributeDifficulty { get; set; }
+
+    // The subnet fence is NOT here. It is a list of addresses rather than a bound or a deadline, so it sits with
+    // the other address settings on NodestarOptions - see NodestarOptions.AllowedSubnets. Worth knowing about
+    // from here, because someone reading this class is asking how to lock a node down and that is the other half
+    // of the answer.
+
     // MaxPageantsAsMember is deliberately NOT exposed. It defaults to 0, so unlike everything above it does not
     // bound something already happening — setting it appears to enable a capability rather than to fence one, and
     // nothing here has established what it costs. A Ward this class cannot describe is not one it should offer.
@@ -143,5 +177,8 @@ public sealed class NodestarWards
         || MaxFerrymanReservations is not null
         || ConsecrationTimeout is not null
         || CandidateConnectTimeout is not null
-        || EnableToll is not null;
+        || ControlWindowSeconds is not null
+        || EnableToll is not null
+        || TributeDifficulty is not null
+        || RequiredTributeDifficulty is not null;
 }

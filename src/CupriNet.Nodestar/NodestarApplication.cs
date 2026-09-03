@@ -126,6 +126,11 @@ public sealed class NodestarApplication : IAsyncDisposable
             // routable address has no other way to name one.
             AdvertisedBeacons = DeclaredBeacons(_options),
             AdvertiseLocalAddresses = _options.AdvertiseLocalAddresses,
+
+            // Containment, applied by CupriNet in both directions. Null rather than an empty list when nothing was
+            // configured - see Fence for why the difference is not cosmetic.
+            AllowedSubnets = Fence(_options.AllowedSubnets),
+            DeniedSubnets = Fence(_options.DeniedSubnets),
             Suite = suite,
             SecretStore = store,
             Moniker = _options.Moniker,
@@ -416,6 +421,21 @@ public sealed class NodestarApplication : IAsyncDisposable
     /// answer rather than what some machine happens to advertise.</para>
     /// </summary>
     /// <summary>
+    /// A configured subnet fence, or <c>null</c> when nothing was configured.
+    ///
+    /// <para><b>Null and empty are not the same thing here, and getting it the wrong way round would be severe.</b>
+    /// An allow-list is "only these", so an EMPTY one reads as "allow nothing" — a node that talks to no one,
+    /// arrived at by an operator who configured no fence at all. Null is the value that means "no fence", and it
+    /// is what an unconfigured Nodestar must send.</para>
+    ///
+    /// <para>This repository has already shipped that mistake once, in the other direction: an empty beacon list
+    /// was sent where null was meant, and it suppressed the node's own address discovery — every gate test failed
+    /// and the local suite could not see it. Same distinction, and worth the four lines.</para>
+    /// </summary>
+    internal static IReadOnlyList<string>? Fence(IList<string> configured)
+        => configured.Count > 0 ? [.. configured] : null;
+
+    /// <summary>
     /// Writes the Wards an operator set onto the node's options, and touches nothing else.
     ///
     /// <para><b>Only what was set is written.</b> Each Ward is nullable and an unset one is skipped entirely, so
@@ -443,11 +463,14 @@ public sealed class NodestarApplication : IAsyncDisposable
         if (wards.MaxControlConnectionsPerPeer is { } perPeer) node = node with { MaxControlConnectionsPerPeer = perPeer };
         if (wards.MaxConcurrentHandshakes is { } handshakes) node = node with { MaxConcurrentHandshakes = handshakes };
         if (wards.MaxControlRequestsPerWindow is { } requests) node = node with { MaxControlRequestsPerWindow = requests };
+        if (wards.ControlWindowSeconds is { } window) node = node with { ControlWindowSeconds = window };
         if (wards.MaxFerrymanReservations is { } ferryman) node = node with { MaxFerrymanReservations = ferryman };
 
         if (wards.ConsecrationTimeout is { } consecration) node = node with { ConsecrationTimeout = consecration };
         if (wards.CandidateConnectTimeout is { } candidate) node = node with { CandidateConnectTimeout = candidate };
         if (wards.EnableToll is { } toll) node = node with { EnableToll = toll };
+        if (wards.TributeDifficulty is { } tribute) node = node with { TributeDifficulty = tribute };
+        if (wards.RequiredTributeDifficulty is { } required) node = node with { RequiredTributeDifficulty = required };
 
         return node;
     }
@@ -474,10 +497,13 @@ public sealed class NodestarApplication : IAsyncDisposable
         Note(nameof(wards.MaxControlConnectionsPerPeer), wards.MaxControlConnectionsPerPeer);
         Note(nameof(wards.MaxConcurrentHandshakes), wards.MaxConcurrentHandshakes);
         Note(nameof(wards.MaxControlRequestsPerWindow), wards.MaxControlRequestsPerWindow);
+        Note(nameof(wards.ControlWindowSeconds), wards.ControlWindowSeconds);
         Note(nameof(wards.MaxFerrymanReservations), wards.MaxFerrymanReservations);
         Note(nameof(wards.ConsecrationTimeout), wards.ConsecrationTimeout);
         Note(nameof(wards.CandidateConnectTimeout), wards.CandidateConnectTimeout);
         Note(nameof(wards.EnableToll), wards.EnableToll);
+        Note(nameof(wards.TributeDifficulty), wards.TributeDifficulty);
+        Note(nameof(wards.RequiredTributeDifficulty), wards.RequiredTributeDifficulty);
 
         _log.LogInformation("Wards overridden: {Wards}. Everything else is CupriNet's own default.",
             string.Join(", ", changed));

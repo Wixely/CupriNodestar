@@ -120,6 +120,40 @@ system, while this one is honest about what a clone actually gets today.
       Startup now prints what a browser will dial, and warns when the answer is nothing — the failure otherwise
       appears only in a visitor's browser console, on their machine, while the node logs a healthy start.
 
+- [x] **The subnet fence, the rate-limit window, and the Toll's cost.** Found by diffing `CupriNodeOptions`
+      against what a Nodestar actually sets, after the Wards turned out to be eleven settings reaching nothing and
+      `PublicHost`/`PublicPort` had been inert before that. Twice is a pattern; the diff is the answer to it.
+      **32 of 62 properties were never set.** Most do not matter to a Nodestar. Three did.
+
+      **`ControlWindowSeconds` was missing from the Wards shipped one release earlier, and that was a real defect
+      rather than an omission.** A rate limit is the pair: `MaxControlRequestsPerWindow` was configurable and its
+      window was not, so an operator raising the count to allow an occasional burst had instead doubled the rate a
+      peer may sustain forever — while reading the configuration back and seeing exactly what they intended.
+
+      **`TributeDifficulty` and `RequiredTributeDifficulty`** complete `EnableToll`, which had the same shape:
+      whether arriving costs anything and how much it costs are one decision, and an operator able to answer only
+      the first has not really been given it. The two are not interchangeable — one is what this node asks of
+      arrivals, the other what it insists on from theirs, and raising the second above what peers mint turns them
+      away.
+
+      **`AllowedSubnets` / `DeniedSubnets` reached nothing at all.** This is the control CupriNet deliberately
+      strengthened after concluding it is CONTAINMENT rather than an inbound filter — it refuses to dial a beacon
+      outside the fence as well as to accept from outside it, because an operator fencing a node to a subnet means
+      it should not talk outside that subnet by any path. Unreachable from a Nodestar until now.
+
+      They live on `NodestarOptions` beside the other address settings rather than under `Wards`, because they are
+      a list of addresses rather than a bound or a deadline. `NodestarWards` points at them, since someone reading
+      that file is asking how to lock a node down and this is the other half of the answer.
+
+      **An unconfigured fence is sent as null, never as an empty list.** An allow-list is "only these", so an empty
+      one reads as *allow nothing* — a node that talks to nobody, reached by an operator who configured no fence at
+      all. This repository has already shipped that exact confusion in the other direction, where an empty beacon
+      list suppressed the node's own address discovery. It is also copied rather than handed over live, so
+      configuration edited after startup cannot silently move a security boundary.
+
+      Four mutations, all killed: an empty fence where null belongs, a fence handed over live, the Toll's two
+      halves crossed, and the window configurable but inert.
+
 - [x] **The Wards are configurable.** CupriNet's security review found that one address could complete every
       available handshake, then go quiet, and hold every visit slot for as long as it liked — total unavailability
       for the cost of that many Toll solves. `PilgrimageIdleTimeout` and `MaxPilgrimagesPerAddress` were the answer,

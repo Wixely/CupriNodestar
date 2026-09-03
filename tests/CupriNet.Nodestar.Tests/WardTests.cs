@@ -48,6 +48,9 @@ public class WardTests
         MaxFerrymanReservations = 4249,
         ConsecrationTimeout = TimeSpan.FromSeconds(4250),
         CandidateConnectTimeout = TimeSpan.FromSeconds(4251),
+        ControlWindowSeconds = 4252,
+        TributeDifficulty = 4253,
+        RequiredTributeDifficulty = 4254,
         EnableToll = false,
     };
 
@@ -93,6 +96,7 @@ public class WardTests
                 MaxControlConnectionsPerPeer = 2,
                 MaxConcurrentHandshakes = 16,
                 MaxControlRequestsPerWindow = 240,
+                ControlWindowSeconds = 20,
                 MaxFerrymanReservations = 4,
                 ConsecrationTimeout = TimeSpan.FromSeconds(45),
                 CandidateConnectTimeout = TimeSpan.FromSeconds(12),
@@ -104,10 +108,99 @@ public class WardTests
         Assert.Equal(2, applied.MaxControlConnectionsPerPeer);
         Assert.Equal(16, applied.MaxConcurrentHandshakes);
         Assert.Equal(240, applied.MaxControlRequestsPerWindow);
+        Assert.Equal(20, applied.ControlWindowSeconds);
         Assert.Equal(4, applied.MaxFerrymanReservations);
         Assert.Equal(TimeSpan.FromSeconds(45), applied.ConsecrationTimeout);
         Assert.Equal(TimeSpan.FromSeconds(12), applied.CandidateConnectTimeout);
         Assert.False(applied.EnableToll);
+    }
+
+    /// <summary>
+    /// The Toll's cost, both halves of it.
+    ///
+    /// <para>Asserted separately from the other numbers because they are the pair most easily confused: one is
+    /// what this node asks of arrivals, the other what it insists on from theirs. A forwarding that crossed them
+    /// would look entirely healthy and quietly turn away every peer whose Toll was minted at the old figure.</para>
+    /// </summary>
+    [Fact]
+    public void Both_halves_of_the_Toll_reach_the_node()
+    {
+        var applied = NodestarApplication.ApplyWards(
+            new NodestarWards { TributeDifficulty = 20, RequiredTributeDifficulty = 12 }, Untouched);
+
+        Assert.Equal(20, applied.TributeDifficulty);
+        Assert.Equal(12, applied.RequiredTributeDifficulty);
+    }
+
+    // ---- The subnet fence ----------------------------------------------------------------------------------
+    //
+    // Not a Ward - it is a list of addresses rather than a bound or a deadline - but the same kind of control and
+    // the same kind of mistake, so it is guarded beside them.
+
+    /// <summary>
+    /// <b>An unconfigured fence must be null, not empty.</b>
+    ///
+    /// <para>An allow-list is "only these", so an EMPTY one reads as "allow nothing" — a node that talks to
+    /// nobody, arrived at by an operator who configured no fence at all. This repository has already shipped that
+    /// exact confusion once in the other direction: an empty beacon list went where null was meant and suppressed
+    /// the node's own address discovery.</para>
+    /// </summary>
+    [Fact]
+    public void An_unconfigured_fence_is_absent_rather_than_empty()
+    {
+        var options = new NodestarOptions();
+
+        Assert.Null(NodestarApplication.Fence(options.AllowedSubnets));
+        Assert.Null(NodestarApplication.Fence(options.DeniedSubnets));
+    }
+
+    [Fact]
+    public void A_configured_fence_is_forwarded_as_given()
+    {
+        var options = new NodestarOptions();
+        options.AllowedSubnets.Add("10.0.0.0/8");
+        options.AllowedSubnets.Add("192.168.0.0/16");
+        options.DeniedSubnets.Add("10.1.2.0/24");
+
+        // Forwarded verbatim: CupriNet parses these, and a second parser here would only be a second place for a
+        // CIDR to be rejected with a different message.
+        Assert.Equal(["10.0.0.0/8", "192.168.0.0/16"], NodestarApplication.Fence(options.AllowedSubnets));
+        Assert.Equal(["10.1.2.0/24"], NodestarApplication.Fence(options.DeniedSubnets));
+    }
+
+    /// <summary>
+    /// The fence is a copy, so configuration edited after the node started cannot silently move it.
+    /// </summary>
+    [Fact]
+    public void A_forwarded_fence_does_not_track_later_edits()
+    {
+        var options = new NodestarOptions();
+        options.AllowedSubnets.Add("10.0.0.0/8");
+
+        var fence = NodestarApplication.Fence(options.AllowedSubnets);
+        options.AllowedSubnets.Add("0.0.0.0/0");
+
+        Assert.Equal(["10.0.0.0/8"], fence);
+    }
+
+    [Fact]
+    public void The_fence_binds_from_configuration()
+    {
+        var options = new NodestarOptions();
+
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Nodestar:AllowedSubnets:0"] = "10.0.0.0/8",
+                ["Nodestar:AllowedSubnets:1"] = "172.16.0.0/12",
+                ["Nodestar:DeniedSubnets:0"] = "10.9.9.0/24",
+            })
+            .Build()
+            .GetSection(NodestarOptions.SectionName)
+            .Bind(options);
+
+        Assert.Equal(["10.0.0.0/8", "172.16.0.0/12"], options.AllowedSubnets);
+        Assert.Equal(["10.9.9.0/24"], options.DeniedSubnets);
     }
 
     /// <summary>

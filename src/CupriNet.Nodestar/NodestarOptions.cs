@@ -78,6 +78,30 @@ public sealed class NodestarOptions
     public int? PublicPort { get; set; }
 
     /// <summary>
+    /// The subnets this node may talk to, as CIDR strings. Empty means no fence, which is the default.
+    ///
+    /// <para><b>It is containment, not an inbound filter.</b> CupriNet applies it in BOTH directions — it refuses
+    /// to dial a beacon outside the fence as well as to accept from outside it, on the listener and on a
+    /// caller-owned vessel alike. An operator fencing a node to a subnet means it should not talk outside that
+    /// subnet by any path, and a policy that silently held on only one of them would be worse than none.</para>
+    ///
+    /// <para>A peer with no IP endpoint still passes: an in-memory pair, a DataChannel or an onion address has
+    /// nothing to filter on, and refusing for want of an address would break those for no gain.</para>
+    ///
+    /// <para>Set from <c>Nodestar:AllowedSubnets:0</c>, or <c>CUPRINET_NODESTAR_AllowedSubnets__0</c>.</para>
+    /// </summary>
+    public IList<string> AllowedSubnets { get; } = [];
+
+    /// <summary>
+    /// Subnets this node must not talk to, as CIDR strings. Empty means none, which is the default.
+    ///
+    /// <para>The other side of <see cref="AllowedSubnets"/>, and the two answer different questions: an allow-list
+    /// is "only these", a deny-list is "anything but these". Which one a deployment wants is not this library's
+    /// call, so both are forwarded exactly as given.</para>
+    /// </summary>
+    public IList<string> DeniedSubnets { get; } = [];
+
+    /// <summary>
     /// Whether to advertise the addresses this node found on its own interfaces. Default true.
     ///
     /// <para>Turn it off when those addresses are useless to a visitor and would only get in the way — a container's

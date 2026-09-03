@@ -70,7 +70,30 @@ direction keeps a visit alive, so a browser attending an Auspice and sending not
 visitors who genuinely sit still — a page left open in a tab — not for feeds.
 
 `Wards:EnableToll=false` removes the cost of arriving, which is what makes every other bound expensive to
-exhaust. The node warns when you do it.
+exhaust. The node warns when you do it. `TributeDifficulty` (16) is how hard a Toll this node mints and
+`RequiredTributeDifficulty` (16) how hard a one it accepts — raise the second above what your peers mint and you
+will turn them away, which is a fence around your own node rather than a defence of it.
+
+**Rate limits are pairs.** `MaxControlRequestsPerWindow` (120) and `ControlWindowSeconds` (10) only mean
+something together: raising the count alone does not lengthen the window, it raises the rate a peer may sustain
+indefinitely.
+
+## Fencing a node to a subnet
+
+```sh
+CUPRINET_NODESTAR_AllowedSubnets__0=10.0.0.0/8
+CUPRINET_NODESTAR_DeniedSubnets__0=10.9.9.0/24
+```
+
+**This is containment, not an inbound filter.** CupriNet applies it in both directions — it refuses to dial a
+beacon outside the fence as well as to accept from outside it. Fencing a node to a subnet means it does not talk
+outside that subnet by any path.
+
+A peer with no IP endpoint still passes: an in-memory pair, a browser DataChannel or an onion address has nothing
+to filter on. So a fence does **not** by itself stop browser visitors reaching a Mode-1 site.
+
+Leave both empty for no fence, which is the default. An empty allow-list is not "allow nothing" — nothing is sent
+at all.
 
 ## Your site
 
