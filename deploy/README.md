@@ -112,7 +112,7 @@ docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile -t cuprinet-nod
 
 That unpacks the published client package rather than compiling wasm, so it needs no Emscripten and no bundle in
 the build context — about 24 MB larger than the default image, almost all of it renderer. Pin which client with
-`--build-arg CLIENT_VERSION=0.1.0-alpha.11`.
+`--build-arg CLIENT_VERSION=0.1.0-alpha.12`.
 
 The default image deliberately carries no client: a deployment behind a tunnel or an onion cannot use Mode 1 at all
 and should not haul a renderer around to not use it.
