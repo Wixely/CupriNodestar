@@ -8,6 +8,17 @@
 // answer locally and dial straight out. Nothing is exchanged with a third party, and nobody else learns of the visit.
 
 mergeInto(LibraryManager.library, {
+  cupri_renderer_start: function () {
+    if (globalThis.__cupri.startRenderer) globalThis.__cupri.startRenderer();
+  },
+  cupri_renderer_cpu__deps: ['$cupri'],
+  cupri_renderer_cpu: function (reason) {
+    globalThis.__cupri.fallbackRenderer(UTF8ToString(reason));
+    cupri.inputAttached = false;
+  },
+  cupri_renderer_painted: function () {
+    globalThis.__cupri.paints = (globalThis.__cupri.paints || 0) + 1;
+  },
   // --- state -------------------------------------------------------------------------------------------------
 
   $cupri__postset: 'cupri.init();',
@@ -253,10 +264,10 @@ mergeInto(LibraryManager.library, {
     // canvas. Called every frame from cupri_take_input and idempotent, so it simply starts working once the canvas
     // exists instead of depending on a load order neither side controls.
     ensureInput: function () {
-      if (cupri.inputAttached) return;
       const c = cupri.canvasEl();
       if (!c) return;
-      cupri.inputAttached = true;
+      if (cupri.inputAttached === c) return;
+      cupri.inputAttached = c;
 
       // A canvas is not focusable by default, so without this it never receives a key event. Set here rather than in
       // the page's markup to keep every input concern in one file.
@@ -367,9 +378,12 @@ mergeInto(LibraryManager.library, {
       // on a text field puts Paste and Select All into the ARIA mirror — so this one is swallowed.
       // The browser can leave fullscreen on its own — its Escape is handled before any page sees it — so the
       // engine is told rather than left believing a video is still filling the screen.
-      document.addEventListener('fullscreenchange', function () {
-        cupri.input.push({ k: 19, i0: document.fullscreenElement ? 1 : 0 });
-      });
+      if (!cupri.fullscreenAttached) {
+        cupri.fullscreenAttached = true;
+        document.addEventListener('fullscreenchange', function () {
+          cupri.input.push({ k: 19, i0: document.fullscreenElement ? 1 : 0 });
+        });
+      }
 
       c.addEventListener('contextmenu', function (e) {
         const p = cupri.at(e); if (!p) return;

@@ -22,6 +22,20 @@ namespace CupriNet.Nodestar.Client;
 /// </summary>
 internal sealed unsafe partial class CupriFaceBridge : IWebBridge
 {
+    // This document-only client exposes neither dropped files nor app-registered
+    // canvas surfaces. Report unsupported operations explicitly on the newer host API.
+    public void DropReadRange(int fileId, int token, double offset, int length)
+        => WebHostCore.DropFailed(token, "This client does not accept dropped files.");
+
+    public void UnderlayOpenCanvas(int id, string surfaceKey)
+        => throw new NotSupportedException("Canvas underlays are not registered by this document client.");
+
+    public void UnderlayClose(int id) { }
+
+    public void UnderlayRect(int id, double x, double y, double w, double h,
+        double clipTop, double clipRight, double clipBottom, double clipLeft,
+        bool visible, string fit, double a, double b, double c, double d, double e, double f) { }
+
     [LibraryImport("js", EntryPoint = "cupri_present")]
     private static partial void PresentJs(IntPtr rgba, int width, int height, int dx, int dy, int dw, int dh);
 

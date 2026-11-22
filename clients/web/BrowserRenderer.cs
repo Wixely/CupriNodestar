@@ -29,6 +29,15 @@ internal static partial class BrowserRenderer
 {
     private static readonly CupriFaceBridge Bridge = new();
 
+    [LibraryImport("js", EntryPoint = "cupri_renderer_start")]
+    private static partial void StartRenderer();
+
+    [LibraryImport("js", EntryPoint = "cupri_renderer_cpu", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial void RendererFallback(string reason);
+
+    [LibraryImport("js", EntryPoint = "cupri_renderer_painted")]
+    private static partial void RendererPainted();
+
     /// <summary>Whether a site has been shown, so input and frames have something to reach.</summary>
     private static bool _live;
 
@@ -110,6 +119,7 @@ internal static partial class BrowserRenderer
         var app = new SiteApp(html, designWidth, designHeight, CanvasScale);
 
         WebHostCore.Init(app, Configure, Bridge);
+        StartRenderer();
         _live = true;
 
         // NOT painted here, deliberately.
@@ -227,7 +237,14 @@ internal static partial class BrowserRenderer
         // a quiet page is never. Measured: the signal fires exactly once per fetch that completes.
         if (WebHostCore.Document.ConsumeImageArrived()) WebHostCore.MarkDirty();
 
-        if (!WebHostCore.Tick(width, height, seconds * 1000.0)) return;
+        var painted = WebHostCore.Tick(width, height, CanvasScale(), seconds * 1000.0);
+        if (WebHostCore.TakeGpuFallback() is { } reason)
+        {
+            RendererFallback(reason);
+            return;
+        }
+        if (!painted) return;
+        RendererPainted();
 
         if (!_painted)
         {
@@ -353,7 +370,7 @@ internal static partial class BrowserRenderer
     {
         if (!Ready) return;
         var (x, y) = Host(cssX, cssY);
-        WebHostCore.Wheel(x, y, deltaY);
+        WebHostCore.Wheel(x, y, deltaY, ctrl: false);
     }
 
     /// <summary>
