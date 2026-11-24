@@ -43,9 +43,14 @@
     <StackTraceSupport>true</StackTraceSupport>
     <DebugType>none</DebugType>
 
-    <!-- -O1 keeps the build loop tolerable. A shipping bundle wants -O3 + wasm-opt: the probes measured 4.5 MB
-         gzipped at -O1, and the renderer is 87% of that, so this is where the size work lands. -->
-    <EmccFlags>$(EmccFlags) -O1 -sSUPPORT_LONGJMP=wasm</EmccFlags>
+    <!-- Full trimming is already enabled above. Release also optimizes the generated
+         LLVM code and runs Emscripten's Binaryen size passes over the linked module.
+         Those passes invalidate NativeAOT's stack offsets, so keep stack traces in
+         the unoptimized Debug build only. -->
+    <OptimizationPreference Condition="'$(Configuration)' == 'Release'">Size</OptimizationPreference>
+    <StackTraceSupport Condition="'$(Configuration)' == 'Release'">false</StackTraceSupport>
+    <EmccFlags Condition="'$(Configuration)' == 'Release'">$(EmccFlags) -Oz -sSUPPORT_LONGJMP=wasm</EmccFlags>
+    <EmccFlags Condition="'$(Configuration)' != 'Release'">$(EmccFlags) -O1 -sSUPPORT_LONGJMP=wasm</EmccFlags>
 
     <ExecutableExtensionName Condition="$([MSBuild]::IsOSPlatform('Windows'))">.exe</ExecutableExtensionName>
     <IlcHostRid Condition="'$(IlcHostRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</IlcHostRid>
