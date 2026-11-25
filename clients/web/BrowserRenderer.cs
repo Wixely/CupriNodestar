@@ -448,11 +448,16 @@ internal static partial class BrowserRenderer
     /// Select All — so the menu is real and a screen reader can read it. On bare background it also returns true
     /// and adds nothing, which is why the page swallows the browser's menu unconditionally rather than waiting to
     /// hear whether this claimed it: the answer is always yes, and it arrives a frame too late to act on anyway.</para>
+    ///
+    /// <para>Through <c>WebHostCore</c>, as every other pointer event is. Since CupriFace 0.47 the host un-scales
+    /// pointer coordinates by the present scale, which here includes the width fit; handed to the document directly,
+    /// the right-click landed somewhere other than where the cursor said a field was, and no menu opened.</para>
     /// </summary>
-    public static void ContextMenu(float x, float y)
+    public static void ContextMenu(float cssX, float cssY)
     {
         if (!Ready) return;
-        if (WebHostCore.Document.DispatchContextMenu(x, y)) WebHostCore.MarkDirty();
+        var (x, y) = Host(cssX, cssY);
+        WebHostCore.ContextMenu(x, y);
     }
 
     /// <summary>Undo, over a history the engine keeps and the browser knows nothing about.</summary>

@@ -32,10 +32,6 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
 
     public void UnderlayClose(int id) { }
 
-    public void UnderlayRect(int id, double x, double y, double w, double h,
-        double clipTop, double clipRight, double clipBottom, double clipLeft,
-        bool visible, string fit, double a, double b, double c, double d, double e, double f) { }
-
     [LibraryImport("js", EntryPoint = "cupri_present")]
     private static partial void PresentJs(IntPtr rgba, int width, int height, int dx, int dy, int dw, int dh);
 
@@ -195,8 +191,12 @@ internal sealed unsafe partial class CupriFaceBridge : IWebBridge
     /// <summary>
     /// Where the hole is, in canvas pixels — which the page converts, because this canvas is sized in DEVICE
     /// pixels and the element it positions is laid out in CSS ones.
+    ///
+    /// <para>Named for underlays since CupriFace 0.47, which folded the video rect into one call for every element
+    /// composited beneath the canvas. Video is the only underlay this client opens, so the ids are video ids. Left
+    /// as an empty stub for one release, it showed every video as a hidden element with nothing behind its hole.</para>
     /// </summary>
-    public void VideoRect(int id, double x, double y, double w, double h, double clipTop, double clipRight,
+    public void UnderlayRect(int id, double x, double y, double w, double h, double clipTop, double clipRight,
         double clipBottom, double clipLeft, bool visible, string fit,
         double a, double b, double c, double d, double e, double f)
         => VideoRectJs(id, x, y, w, h, clipTop, clipRight, clipBottom, clipLeft, visible ? 1 : 0, fit,
