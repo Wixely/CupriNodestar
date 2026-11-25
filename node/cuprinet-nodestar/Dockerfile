@@ -108,8 +108,9 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 #
 # BUILD a browser client. The wasm bundle is a build output, not a source file, and producing it here would mean a
 # first stage carrying the wasm workload and Emscripten — a very large image for a step most deployments do not
-# need. `--target mode1` UNPACKS one instead, from the published client package: the wasm was compiled once, when
-# that package was built. Mounting a bundle at /client still works and keeps the client swappable.
+# need. `--target mode1` TAKES one instead — files from the same build, or the newest published package (see the
+# client stage below): the wasm was compiled once, elsewhere. Mounting a bundle at /client still works and keeps the
+# client swappable.
 #
 # ---- what the first build actually proved ----
 #
@@ -178,19 +179,31 @@ ENTRYPOINT ["dotnet", "cuprinet-nodestar.dll"]
 # reaching the container at all.
 
 # ---------------------------------------------------------------------------------------------------------------
-# The browser client, unpacked from its published package.
+# The browser client, for Mode 1. It comes from one of two places, and NEITHER is a version written in this file:
 #
-# NO EMSCRIPTEN HERE, and that is the point. The wasm was compiled once, when the client package was published; an
-# image that rebuilt it would carry a toolchain an order of magnitude larger than the thing it produces. This is
-# also why the host does not simply reference the package and call ServeCupriFaceClient(): that would pull
+#   FILES, from the same build as the node. CI does this: it hands over the bundle its own browser job just built
+#   from this commit, by replacing the `client` stage below with a directory —
+#     docker build --target mode1 --build-context client=<bundle dir> -f node/cuprinet-nodestar/Dockerfile .
+#   The node and its client then always come from the same commit, so they always speak the same CupriNet. Any
+#   local bundle works the same way, e.g. src/CupriNet.Nodestar.Client.CupriFace/client after a wasm publish.
+#
+#   The NEWEST PUBLISHED client package, when no directory is given — a build on a machine with no wasm toolchain.
+#   Override it with --build-arg CLIENT_VERSION=<version>. This is a convenience, not a release path: the newest
+#   published client was built against whichever CupriNet it was published with, so across a CupriNet hard cut it
+#   can be one the node refuses to talk to. The version it took is printed in the build log.
+#
+# There used to be a third place: a version pinned here by hand. Every client release then needed a commit to this
+# file, and a missed one shipped an image whose node and client disagreed — the pin was the failure, not the guard.
+#
+# NO EMSCRIPTEN HERE either way. The wasm was compiled once, by CI's browser job or when the package was published.
+# This is also why the host does not simply reference the package and call ServeCupriFaceClient(): that would pull
 # CupriFace into the server-side graph, which `cupriface-boundary` exists to prevent. The bundle arrives as FILES,
 # which is what ClientRoot has always taken.
 # ---------------------------------------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS client
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS client-extract
 
-# Which published client to ship. Pinned rather than floated: a rebuild of the same Dockerfile should produce the
-# same image, and `0.1.0-*` would quietly stop doing that the next time anything is published.
-ARG CLIENT_VERSION=0.1.0-alpha.12
+# The newest published client unless told otherwise (a NuGet floating range: highest version, prereleases included).
+ARG CLIENT_VERSION=*-*
 
 WORKDIR /src
 
@@ -205,17 +218,26 @@ RUN --mount=type=secret,id=packages_token     sh -c 'if [ -d /src/offline-packag
 
 RUN dotnet run --project tools/client-extract/ClientExtract.csproj -p:ClientVersion="$CLIENT_VERSION" --no-restore -- /out
 
+# The bundle, and nothing else, at the root. This is the stage `--build-context client=<dir>` replaces; when it
+# does, client-extract above is never referenced and BuildKit does not run it.
+FROM scratch AS client
+COPY --from=client-extract /out/ /
+
 # ---------------------------------------------------------------------------------------------------------------
 # Mode 1: the same node, shipping the browser client, so /_nodestar/app is served without mounting anything.
 #
-#   docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile .
+#   docker build --target mode1 --build-context client=<bundle dir> -f node/cuprinet-nodestar/Dockerfile .
+#   docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile .      (the newest published client)
 #
 # About 20 MB larger, almost all of it renderer. A visitor's browser makes the L2 visit itself over WebRTC and the
 # node is a peer rather than a server — which still needs the UDP port published and PublicHost set to an address
 # they can reach. Neither of those is this image's to arrange.
 # ---------------------------------------------------------------------------------------------------------------
 FROM runtime-base AS mode1
-COPY --from=client --chown=app:app /out/ /client/
+COPY --from=client --chown=app:app / /client/
+# A Mode-1 image with no page to serve would start cleanly and answer 404 at /_nodestar/app — so refuse to build it.
+RUN test -f /client/index.html && test -f /client/dotnet.native.wasm \
+    || { echo "the client bundle has no index.html or dotnet.native.wasm — nothing to serve at /_nodestar/app"; exit 1; }
 
 # ---------------------------------------------------------------------------------------------------------------
 # Mode 2 is the DEFAULT, and stays last so that `docker build` with no --target keeps producing it.

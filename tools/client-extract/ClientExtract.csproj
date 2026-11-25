@@ -28,10 +28,11 @@
     <AssemblyName>client-extract</AssemblyName>
     <RootNamespace>ClientExtract</RootNamespace>
 
-    <!-- Version of the CLIENT PACKAGE to unpack, passed by the Dockerfile. Defaults to the newest release rather
-         than to a floating range: an image should say which client it shipped, and `0.1.0-*` would silently
-         change what a rebuild produces. -->
-    <ClientVersion Condition="'$(ClientVersion)' == ''">0.1.0-alpha.9</ClientVersion>
+    <!-- Version of the CLIENT PACKAGE to unpack, passed by the Dockerfile. With none, the newest published one (a
+         floating range). No version is pinned here: a pin had to be bumped by hand for every client release, and
+         the image is built in CI from the client of the same commit anyway — this tool is only the fallback for a
+         build with no bundle to hand. Program.cs prints which version it unpacked. -->
+    <ClientVersion Condition="'$(ClientVersion)' == ''">*-*</ClientVersion>
 
     <!-- This tool is not the product and takes no part in its versioning. -->
     <Version>1.0.0</Version>

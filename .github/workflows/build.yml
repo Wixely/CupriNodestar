@@ -385,6 +385,107 @@ jobs:
           dotnet build src/CupriNet.Nodestar.Tor/CupriNet.Nodestar.Tor.csproj -c Release --no-restore
           dotnet build node/cuprinet-nodestar/cuprinet-nodestar.csproj -c Release --no-restore
 
+  # The container images: the default (Mode 2, no client) and Mode 1 (shipping the browser client). Built on every
+  # run, so a Dockerfile that stops building fails here rather than on someone's server; pushed to GHCR on a v* tag.
+  #
+  # Mode 1 takes its client as FILES — the bundle the browser job built from THIS commit — by replacing the
+  # Dockerfile's `client` stage with `--build-context client=…`. No client version appears anywhere: the node and the
+  # client in one image always come from the same commit, so they always speak the same CupriNet. The image used to
+  # name a client release in the Dockerfile, bumped by hand per release ("takes alpha.N's client"); a missed bump
+  # shipped a node and a client that disagreed, which across a CupriNet hard cut means one that cannot connect.
+  docker:
+    needs: [build, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Outside the workspace on purpose: the Dockerfile's build stage copies the whole context, and the bundle has
+      # no business in it — it reaches the image through the named context only.
+      - uses: actions/download-artifact@v4
+        with:
+          name: browser-client
+          path: ${{ runner.temp }}/client-bundle
+
+      - name: Assert the client bundle actually arrived
+        shell: bash
+        run: |
+          dir="${{ runner.temp }}/client-bundle"
+          for required in dotnet.native.wasm dotnet.js index.html; do
+            if [ ! -f "$dir/$required" ]; then
+              echo "::error::$required is missing from $dir — the browser-client artifact did not arrive intact."
+              ls -laR "$dir" || echo "(the directory does not exist)"
+              exit 1
+            fi
+          done
+          echo "client bundle present: $(ls -1 "$dir" | wc -l) files, $(du -sh "$dir" | cut -f1)"
+
+      - name: Set up QEMU (emulates the arm64 runtime stage on an amd64 runner)
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx (multi-platform builder)
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR (only when pushing on a tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags (Mode 2, the default)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cuprinet-nodestar
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=sha
+      - name: Image tags (Mode 1)
+        id: meta1
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cuprinet-nodestar
+          flavor: suffix=-mode1,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Build (and push on tag) the Mode 2 image
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false # the release job downloads every artifact; it has no use for this one
+        with:
+          context: .
+          file: node/cuprinet-nodestar/Dockerfile
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            packages_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on tag) the Mode 1 image, with this commit's client
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: node/cuprinet-nodestar/Dockerfile
+          target: mode1
+          build-contexts: |
+            client=${{ runner.temp }}/client-bundle
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: ${{ steps.meta1.outputs.tags }}
+          labels: ${{ steps.meta1.outputs.labels }}
+          secrets: |
+            packages_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
   # A prerelease GitHub Release on a v* tag, carrying the runnable examples and the packages.
   #
   # Prerelease is not modesty: nothing here has been consumed by anyone, the deploy story is unfinished (TODO.md),

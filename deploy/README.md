@@ -104,15 +104,22 @@ asked rather than a delay.
 ## Mode 1
 
 Two ways. **Unzip a browser client bundle into `deploy/client`** and the node serves `/_nodestar/app` — see
-`deploy/client/README.md`. Or **build the image that ships one**:
+`deploy/client/README.md`. Or **use the image that ships one**: CI builds it on every run, from the node and the
+client of the same commit, and on a `v*` tag pushes it as `ghcr.io/wixely/cuprinet-nodestar:<version>-mode1`
+(the default image is the same tag without `-mode1`).
+
+To build it yourself, hand it a client bundle — the same thing CI does:
 
 ```sh
-docker build --target mode1 -f node/cuprinet-nodestar/Dockerfile -t cuprinet-nodestar:mode1 .
+docker build --target mode1 --build-context client=src/CupriNet.Nodestar.Client.CupriFace/client \
+  -f node/cuprinet-nodestar/Dockerfile -t cuprinet-nodestar:mode1 .
 ```
 
-That unpacks the published client package rather than compiling wasm, so it needs no Emscripten and no bundle in
-the build context — about 24 MB larger than the default image, almost all of it renderer. Pin which client with
-`--build-arg CLIENT_VERSION=0.1.0-alpha.12`.
+Or, with no bundle to hand, leave `--build-context` off and it unpacks the **newest published** client package
+instead, so no wasm toolchain is needed (`--build-arg CLIENT_VERSION=<version>` picks another). That is a
+convenience, not a release path: across a CupriNet hard cut the newest published client can be one the node
+refuses. The image is about 24 MB larger than the default, almost all of it renderer, and the build refuses to
+produce one with no `index.html` to serve.
 
 The default image deliberately carries no client: a deployment behind a tunnel or an onion cannot use Mode 1 at all
 and should not haul a renderer around to not use it.
