@@ -19,6 +19,11 @@
              browser be a Pilgrim without constructing a node that binds sockets.
       0.3.4  CupriNet.Tor finally published, so an onion transport can be referenced at all; plus the Relic rite
              (bulk content over the Shrine path) and an Oracle body guard at the 192 KiB ceiling.
+      0.7.0  a HARD CUT: does not interoperate with 0.6.x. Every signed document is signed under a label naming
+             its type, so links are now version 2 and a client built on 0.6.x refuses them — the node and the
+             served client bundle must move together, and links handed out before must be re-issued. Nothing in
+             this repository needed a code change: the API that moved (VeilRole on the keyed rite constructors, a
+             connection id on UdpVessel.Over, signed Attestations) is on the Arcanum path, not the Pilgrimage one.
       0.6.1  the .NET WebRTC adapter reports a real MaxMessageBytes too (via CupriWebRTC 0.4.0), so the 0.6.0
              connect-time check is no longer inert on that side. It still cannot catch a browser that negotiated
              low: with no signalling, a browser's offer never reaches the node, so the node's figure means "what we
@@ -47,7 +52,7 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.6.2</CupriNetVersion>
+    <CupriNetVersion>0.7.0</CupriNetVersion>
     <!-- 0.4.0 exposes the SCTP association's negotiated message size (CupriWebRTC#1), which is what lets
          CupriNet's adapter answer IDataChannel.MaxMessageBytes with a real number instead of 0. Required by
          CupriNet.WebRtc 0.6.1 rather than merely allowed by it. -->
