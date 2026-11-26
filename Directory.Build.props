@@ -52,7 +52,7 @@
     Keep these together so a bump is one edit.
   -->
   <PropertyGroup>
-    <CupriNetVersion>0.7.0</CupriNetVersion>
+    <CupriNetVersion>0.7.1</CupriNetVersion>
     <!-- 0.4.0 exposes the SCTP association's negotiated message size (CupriWebRTC#1), which is what lets
          CupriNet's adapter answer IDataChannel.MaxMessageBytes with a real number instead of 0. Required by
          CupriNet.WebRtc 0.6.1 rather than merely allowed by it. -->
@@ -80,7 +80,7 @@
 
          The two host packages are NOT adopted here yet — see TODO.md. -->
     <!-- 0.47.0 supplies SkSL @shader backgrounds used by the presence galaxies. -->
-    <CupriFaceVersion>0.47.0</CupriFaceVersion>
+    <CupriFaceVersion>0.49.0</CupriFaceVersion>
   </PropertyGroup>
 
   <!-- Package metadata (applied when a project opts into packing; see src/Directory.Build.props). -->

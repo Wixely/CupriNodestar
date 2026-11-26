@@ -42,6 +42,8 @@
     <EventSourceSupport>false</EventSourceSupport>
     <StackTraceSupport>true</StackTraceSupport>
     <DebugType>none</DebugType>
+    <!-- The bridge loads the app's own fonts; do not also embed host fonts. -->
+    <CupriWebFonts>none</CupriWebFonts>
 
     <!-- Full trimming is already enabled above. Release also optimizes the generated
          LLVM code and runs Emscripten's Binaryen size passes over the linked module.
@@ -59,6 +61,13 @@
       https://api.nuget.org/v3/index.json;
       https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;
     </RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <!-- Opt-in for sites using plain HTML/CSS, not the general-purpose browser. -->
+  <PropertyGroup Condition="'$(CupriSiteMinimal)' == 'true'">
+    <DefineConstants>$(DefineConstants);CUPRI_SITE_MINIMAL</DefineConstants>
+    <CupriWebVideo>false</CupriWebVideo>
+    <CupriWebFileDrop>false</CupriWebFileDrop>
   </PropertyGroup>
 
   <ItemGroup>
@@ -129,6 +138,7 @@
          paints as nothing — a missing asset that reads as a broken renderer. Noto Sans (OFL, licence alongside),
          the same faces CupriFace's own web hosts embed. -->
     <EmbeddedResource Include="Assets\fonts\*.ttf" LogicalName="fonts.%(Filename)%(Extension)" />
+    <EmbeddedResource Remove="Assets\fonts\NotoSans-Bold.ttf" Condition="'$(CupriSiteMinimal)' == 'true'" />
   </ItemGroup>
 
   <Target Name="CopyHostPage" AfterTargets="Publish">

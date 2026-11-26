@@ -157,7 +157,12 @@ internal static partial class BrowserRenderer
         document.PageZoomEnabled = true;
 
         var assembly = typeof(BrowserRenderer).Assembly;
-        foreach (var name in new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" })
+#if CUPRI_SITE_MINIMAL
+        var fontNames = new[] { "fonts.NotoSans-Regular.ttf" };
+#else
+        var fontNames = new[] { "fonts.NotoSans-Regular.ttf", "fonts.NotoSans-Bold.ttf" };
+#endif
+        foreach (var name in fontNames)
         {
             using var stream = assembly.GetManifestResourceStream(name);
             if (stream is null)

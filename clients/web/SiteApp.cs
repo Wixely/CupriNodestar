@@ -20,6 +20,10 @@ namespace CupriNet.Nodestar.Client;
 internal sealed class SiteApp(string html, float designWidth, float designHeight, Func<float> density) : CupriApp
 {
     public override string Html => html;
+#if CUPRI_SITE_MINIMAL
+    // Plain HTML/CSS sites need no optional cupri-* controls.
+    public override CupriFace.Components.ComponentRegistry Components => CupriFace.Components.ComponentRegistry.Of();
+#endif
 
     /// <summary>
     /// The one rule this client supplies: a root that can scroll.
